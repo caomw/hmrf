@@ -105,6 +105,7 @@ typedef itk::ImageFileReader< ImageType3DChar >  ReaderType3DChar;
 typedef itk::ImageFileReader< ImageType3DFloat >  ReaderType3DFloat;
 typedef itk::ImageFileReader< ImageType4DChar >  ReaderType4DChar;
 typedef itk::ImageFileReader< ImageType4DFloat >  ReaderType4DFloat;
+typedef itk::ImageFileReader< ImageType4DS >  ReaderType4DS;
 
 typedef itk::ImageSeriesReader< ImageType4DFloat >  SeriesReaderType4DFloat;
 typedef itk::ImageSeriesReader< ImageType5DFloat >  SeriesReaderType5DFloat;
@@ -138,6 +139,7 @@ typedef itk::ImageRegionIterator< ImageType5DFloat >      IteratorType5DFloat;
 typedef itk::ImageRegionIterator< ImageType3DVecF >       IteratorType3DVecF;
 typedef itk::ImageRegionIterator< ImageType3DVecUS >      IteratorType3DVecUS;
 typedef itk::ImageRegionIterator< VnlVectorImageType >      IteratorTypeVnlVector;
+typedef itk::ImageRegionIterator< ImageType4DS >      IteratorType4DS;
 
 typedef itk::AddConstantToImageFilter <ImageType3DChar, unsigned char, ImageType3DChar> AddConstantToImageFilterType;
 
@@ -157,6 +159,8 @@ struct  CompType
 struct SubjectType
 {
      std::vector<CompType> comp;
+     std::string name;
+
 };
 
 struct VMM
@@ -175,6 +179,7 @@ struct ParStruct
      unsigned burnin;
      float initTemp;
      float finalTemp;
+     double temperature;
      float alpha;
      float beta;
      float gamma;
@@ -182,7 +187,8 @@ struct ParStruct
      float sigma2;
      unsigned tsLength;
      unsigned short verbose;
-     
+     unsigned nthreads;
+     unsigned sweepPerThread;
 };
 
 // super coordinates that also include subject id. 
@@ -193,19 +199,18 @@ struct SuperCoordType {
 
 struct ThreadArgs{
      unsigned taskid;
-     lemon::SmartGraph * theGraph;
-     lemon::SmartGraph::NodeMap<SuperCoordType> * coordMap;
-     lemon::SmartGraph::NodeMap<std::vector<unsigned short> > * cumuSampleMap;
-     lemon::SmartGraph::NodeMap<vnl_vector<float>> * tsMap;
-     ParStruct * par;
+     lemon::SmartGraph * theGraphPtr;
+     lemon::SmartGraph::NodeMap<SuperCoordType> * coordMapPtr;
+     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > * rSampleMapPtr;
+     lemon::SmartGraph::EdgeMap<double> *  edgeMapPtr;
+     lemon::SmartGraph::NodeMap<vnl_vector<float>> * tsMapPtr;
+     std::vector< vnl_vector<double> > * vmfLogConstPtr;
+     ParStruct * parPtr;
      unsigned numThreads;
-     
+     unsigned numScans;
+     unsigned startNodeid;
+     unsigned endNodeid;
 };
 
-struct thread_data{
-     int  thread_id;
-     int  sum;
-     char *message;
-};
 
 #endif

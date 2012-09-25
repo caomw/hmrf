@@ -24,9 +24,18 @@ ADD_EXECUTABLE(groupmrf
   utility.cxx
   )
 
+ADD_EXECUTABLE(label2ind
+  label2ind.cxx
+  )
+ADD_EXECUTABLE(ind2label
+  ind2label.cxx
+  )
+
 
 
 TARGET_LINK_LIBRARIES(groupmrf emon ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(label2ind ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(ind2label ${ITK_LIBRARIES} boost_program_options boost_filesystem)
 
 
 
