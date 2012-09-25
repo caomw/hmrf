@@ -1,20 +1,18 @@
 double logBesselI(float nu, double x);
 
-int SaveGrpCumuSamples(lemon::SmartGraph & theGraph, 
+int SaveCumuSamples(lemon::SmartGraph & theGraph, 
 		       lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 		       lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-		       ImageType3DChar::Pointer maskPtr,
-		       ParStruct & par,
-		       std::string outFile);
+		    ParStruct & par);
 
-int SaveSubCumuSamples(lemon::SmartGraph & theGraph, 
+
+int SaveRunningSamples(lemon::SmartGraph & theGraph, 
 		       lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		       lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-		       ImageType3DChar::Pointer maskPtr,
-		       ParStruct & par,
-		       std::string basename);
+		       lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+		       ParStruct & par);
 
 int PrintPar(unsigned prlevel, ParStruct & par);
+int PrintBitSet(boost::dynamic_bitset<> bitset);
 
 int save3dcharInc(ImageType3DChar::Pointer ip, std::string fname);
 

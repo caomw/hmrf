@@ -66,8 +66,8 @@ int main(int argc, char* argv[])
      unsigned int emIter = 1;
 
      std::string dataFile, iLabelFile, oLabelFile, sampleFile;
-     std::string fmriPath, initGrplabel, outGrpLabel, outGrpProb, outSubBase, 
-	  grpSampleName, subsampledir, initsubpath,  groupprob, subbaseprob;
+     std::string initsubpath;
+     std::string fmriPath, initGrplabel, cumusampledir, rsampledir;
 
      bool estprior = false;
      bool initsame = false;
@@ -119,17 +119,15 @@ int main(int argc, char* argv[])
 
 	   ("initgrouplabel,i", po::value<std::string>(&initGrplabel)->default_value("grouplabel.nii"), 
 	    "Initial group level label map (Intensity value 1-K. Also used as mask file.")
-	   ("initsubpath,t", po::value<std::string>(&initsubpath)->default_value("subpath"), 
+	   ("initsubpath,t", po::value<std::string>(&initsubpath)->default_value("./subpath"), 
 	    "Initial subject label maps path")
 	  ("fmripath,f", po::value<std::string>(&fmriPath)->default_value("."), 
 	   "noised image file")
 
-	  ("subsampledir", po::value<std::string>(&subsampledir)->default_value("subject"), 
+	  ("cumusampledir", po::value<std::string>(&cumusampledir)->default_value("./cumusamples"), 
 	   "Monte Carlo samples file dir.")
-	  ("subsampledir", po::value<std::string>(&subsampledir)->default_value("subject"), 
-	   "Monte Carlo samples file dir.")
-	  ("grpsamplename", po::value<std::string>(&grpSampleName)->default_value("grpSample.nii.gz"), 
-	   "Monte Carlo group label samples file name.")
+	  ("rsampledir", po::value<std::string>(&rsampledir)->default_value("./rsamples"), 
+	   "running samples file dir. Also can be the ultimate output dir.")
 
 	  ("verbose,v", po::value<unsigned short>(&par.verbose)->default_value(0), 
 	   "verbose level. 0 for minimal output. 3 for most output.");
@@ -169,10 +167,12 @@ int main(int argc, char* argv[])
 
      // original 1-based group map only used for mask.
      ImageType3DChar::Pointer maskPtr = grpReader->GetOutput();
-
-     // get number of subjects.
+     par.maskSize = maskPtr->GetLargestPossibleRegion().GetSize();
+     par.cumusampledir = cumusampledir;
+     par.rsampledir = rsampledir;
      par.numSubs = ComputeNumSubs(fmriPath);
      printf("number of subjects: %i.\n", par.numSubs);
+     par.temperature = 1;
 
      // init parameters so BuildDataMap knows what to do.
      par.vmm.sub.resize(par.numSubs);
@@ -180,7 +180,6 @@ int main(int argc, char* argv[])
      // Construct graph.
      lemon::SmartGraph theGraph;
      lemon::SmartGraph::NodeMap<SuperCoordType> coordMap(theGraph); // node --> coordinates.
-
      BuildGraph(theGraph, coordMap, par.numSubs, maskPtr);
 
      // Define edge map.
@@ -228,14 +227,10 @@ int main(int argc, char* argv[])
 	       cumuSampleMap[nodeIt].at(initSubjectMap[nodeIt]) = par.numSamples;
 	  }
 	  else {
-	       // only when not initsame for subjects nodes, we init it to
-	       // subjects initial label map.
 	       cumuSampleMap[nodeIt].at(labelPtr->GetPixel(coordMap[nodeIt].idx)) = par.numSamples;
 	  }
      }
-
-     SaveSubCumuSamples(theGraph, coordMap, cumuSampleMap, maskPtr, par, subsampledir);
-     SaveGrpCumuSamples(theGraph, coordMap, cumuSampleMap, maskPtr, par, outGrpLabel);
+     SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
      
      // define a running sample map and init it with the input group
      // labels. This is used for sampling only. And when the whoel scan is done,
@@ -244,15 +239,14 @@ int main(int argc, char* argv[])
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  rSampleMap[nodeIt].resize(par.numClusters, 0);
 	  if (coordMap[nodeIt].subid < par.numSubs && (!initsame) ) {
-	       rSampleMap[nodeIt].set(labelPtr->GetPixel(coordMap[nodeIt].idx), true);
-	  }
-	  else {
-	       // only when not initsame for subjects nodes, we init it to
-	       // subjects initial label map.
 	       rSampleMap[nodeIt].set(initSubjectMap[nodeIt], true);
 	  }
-     }
+	  else {
+	       rSampleMap[nodeIt].set(labelPtr->GetPixel(coordMap[nodeIt].idx), true);
 
+	  }
+     }
+     SaveRunningSamples(theGraph, coordMap, rSampleMap, par);
 
      // as initial step, esimate mu and kappa.
      EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
@@ -264,8 +258,10 @@ int main(int argc, char* argv[])
      	  printf("EM iteration %i begin:\n", emIterIdx + 1);
 	  par.temperature = par.initTemp * pow( (par.finalTemp / par.initTemp), float(emIterIdx) / float(emIter) );
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
+	  SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
+	  SaveRunningSamples(theGraph, coordMap, rSampleMap, par);
+
 	  CompuTotalEnergy(theGraph, coordMap, cumuSampleMap, edgeMap, tsMap, par); 
-	  SaveSubCumuSamples(theGraph, coordMap, cumuSampleMap, maskPtr, par, subsampledir);
 	  
      	  // estimate vMF parameters mu, kappa.
      	  printf("EM iteration %i, parameter estimation begin. \n", emIterIdx + 1);
@@ -773,6 +769,7 @@ int Sampling(lemon::SmartGraph & theGraph,
 	       for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 		    cumuSampleMap[nodeIt][rSampleMap[nodeIt].find_first()] ++;
 	       }
+
 	  }
      } // scanIdx
 	    
@@ -784,7 +781,7 @@ int Sampling(lemon::SmartGraph & theGraph,
 void *SamplingThreads(void * threadArgs)
 {
      ThreadArgs * args = (ThreadArgs *) threadArgs;
-     unsigned taskid = args->taskid;
+     // unsigned taskid = args->taskid;
      lemon::SmartGraph * theGraphPtr = args->theGraphPtr;
      lemon::SmartGraph::NodeMap<SuperCoordType> * coordMapPtr = args->coordMapPtr;
      lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > * rSampleMapPtr = args->rSampleMapPtr;
@@ -792,9 +789,7 @@ void *SamplingThreads(void * threadArgs)
      lemon::SmartGraph::NodeMap<vnl_vector<float>> * tsMapPtr = args->tsMapPtr;
      std::vector< vnl_vector<double> > * vmfLogConstPtr = args->vmfLogConstPtr;
      ParStruct * parPtr = args->parPtr;
-     unsigned numThreads = args->numThreads;
-
-
+     // unsigned numThreads = args->numThreads;
 
      // define random generator.
      boost::random::mt19937 gen;
@@ -841,15 +836,21 @@ void *SamplingThreads(void * threadArgs)
 	       }
 	       denergy = denergy / (*parPtr).temperature;
 
-	       if (denergy <= 0) {
+	       if (denergy < 0) {
+		    // std::cout <<(*rSampleMapPtr)[curNode] << "--->" << cand << "\n";
+		    // printf("cl=%d, nl=%d, sub=%d, coord=[%d %d %d].\n", cl, nl, s, (*coordMapPtr)[curNode].idx[0], (*coordMapPtr)[curNode].idx[1], (*coordMapPtr)[curNode].idx[2]);
 		    (*rSampleMapPtr)[curNode] = cand;
+		    // std::cout << "new value: " << (*rSampleMapPtr)[curNode] << "\n";
 	       }
-	       else {
+	       else if (denergy > 0) {
 		    p_acpt = exp(-denergy);
 		    if (uni() < p_acpt) {
 			 (*rSampleMapPtr)[curNode] = cand;
 		    }
-	       } // else
+	       } // else if
+	       else {
+		    // candidate = current label. No change.
+	       }
 	  } // curNode
      } // sweepIdx
 }

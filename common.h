@@ -189,6 +189,9 @@ struct ParStruct
      unsigned short verbose;
      unsigned nthreads;
      unsigned sweepPerThread;
+     ImageType3DChar::SizeType maskSize;
+     std::string cumusampledir;
+     std::string rsampledir;
 };
 
 // super coordinates that also include subject id. 

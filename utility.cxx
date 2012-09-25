@@ -17,14 +17,12 @@ double logBesselI(float nu, double x)
 }
 
 
-int SaveSubCumuSamples(lemon::SmartGraph & theGraph, 
+int SaveCumuSamples(lemon::SmartGraph & theGraph, 
 		       lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 		       lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-		       ImageType3DChar::Pointer maskPtr,
-		       ParStruct & par,
-		       std::string outdir)
+		    ParStruct & par)
 {
-     ImageType3DChar::SizeType maskSize = maskPtr->GetLargestPossibleRegion().GetSize();
+     ImageType3DChar::SizeType maskSize = par.maskSize;
      ImageType4DS::IndexType outImageIdx;
      outImageIdx.Fill(0);
      ImageType4DS::SizeType outImageSize;
@@ -41,9 +39,8 @@ int SaveSubCumuSamples(lemon::SmartGraph & theGraph,
      outImagePtr->Allocate();
      outImagePtr->FillBuffer(0);
      
-     // write number of sample for specific cluster to file.
      for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	  std::string thisSubFilename(outdir);
+	  std::string thisSubFilename(par.cumusampledir);
 	  thisSubFilename.append("/");
 	  thisSubFilename.append(par.vmm.sub[subIdx].name);
 	  thisSubFilename.append(".nii.gz");
@@ -51,7 +48,7 @@ int SaveSubCumuSamples(lemon::SmartGraph & theGraph,
 
 	  for (lemon::SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=lemon::INVALID; ++ nodeIt) {
 	       // if this is subject node.
-	       if (coordMap[nodeIt].subid < par.numSubs) {
+	       if (coordMap[nodeIt].subid == subIdx) {
 		    outImageIdx[0] = coordMap[nodeIt].idx[0];
 		    outImageIdx[1] = coordMap[nodeIt].idx[1];
 		    outImageIdx[2] = coordMap[nodeIt].idx[2];
@@ -77,37 +74,10 @@ int SaveSubCumuSamples(lemon::SmartGraph & theGraph,
 	       return EXIT_FAILURE;
 	  }      
      } // subIdx
-     std::cout << "SaveSubCumuSamples(): Subject samples saved into folder " << outdir << std::endl;
-     return 0;
-}
+     std::cout << "SaveSubCumuSamples(): Subject samples saved into folder " << par.cumusampledir << std::endl;
 
-
-
-int SaveGrpCumuSamples(lemon::SmartGraph & theGraph, 
-		       lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		       lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-		       ImageType3DChar::Pointer maskPtr,
-		       ParStruct & par,
-		       std::string outFile)
-{
-     ImageType3DChar::SizeType maskSize = maskPtr->GetLargestPossibleRegion().GetSize();
-     ImageType4DS::IndexType outImageIdx;
-     outImageIdx.Fill(0);
-     ImageType4DS::SizeType outImageSize;
-     outImageSize[0] = maskSize[0];
-     outImageSize[1] = maskSize[1];
-     outImageSize[2] = maskSize[2];
-     outImageSize[3] = par.numClusters;
-
-     ImageType4DS::RegionType outImageRegion;
-     outImageRegion.SetSize(outImageSize);
-     outImageRegion.SetIndex(outImageIdx);
-     ImageType4DS::Pointer outImagePtr = ImageType4DS::New();
-     outImagePtr->SetRegions(outImageRegion);
-     outImagePtr->Allocate();
+     // Save group sample file.
      outImagePtr->FillBuffer(0);
-     
-     // write number of samples in a cluster to the file.
      for (lemon::SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=lemon::INVALID; ++ nodeIt) {
 	  // if this is group node.
 	  if (coordMap[nodeIt].subid == par.numSubs) {
@@ -123,7 +93,9 @@ int SaveGrpCumuSamples(lemon::SmartGraph & theGraph,
 
      WriterType4DS::Pointer writer = WriterType4DS::New();
      writer->SetInput( outImagePtr );
-     writer->SetFileName(outFile);
+     std::string outGrpFile = par.cumusampledir.append("/");
+     outGrpFile.append("grp.nii.gz");
+     writer->SetFileName(outGrpFile);
 
      try 
      { 
@@ -135,19 +107,18 @@ int SaveGrpCumuSamples(lemon::SmartGraph & theGraph,
 	  std::cerr << err << std::endl; 
 	  return EXIT_FAILURE;
      }      
-     std::cout << "SaveGrpCumuSamples(): File  " << outFile << " saved.\n";
+     std::cout << "SaveGrpCumuSamples(): File  " << outGrpFile << " saved.\n";
 
      return 0;
 }
 
-int SaveRunningSample(lemon::SmartGraph & theGraph, 
-		  lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		  lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
-		  ImageType3DChar::Pointer maskPtr,
-		  ParStruct & par,
-		  std::string outdir)
+int SaveRunningSamples(lemon::SmartGraph & theGraph, 
+		       lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+		       lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+		       ParStruct & par)
+
 {
-     ImageType3DChar::SizeType maskSize = maskPtr->GetLargestPossibleRegion().GetSize();
+     ImageType3DChar::SizeType maskSize = par.maskSize;
      ImageType4DS::IndexType outImageIdx;
      outImageIdx.Fill(0);
      ImageType4DS::SizeType outImageSize;
@@ -164,30 +135,25 @@ int SaveRunningSample(lemon::SmartGraph & theGraph,
      outImagePtr->Allocate();
      outImagePtr->FillBuffer(0);
 
-     // also define group image.
-     ImageType4DS::Pointer outGrpImagePtr = ImageType4DS::New();
-     outGrpImagePtr->SetRegions(outImageRegion);
-     outGrpImagePtr->Allocate();
-     outGrpImagePtr->FillBuffer(0);
 
-     // write number of sample for specific cluster to file.
      for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	  std::string thisSubFilename(outdir);
+	  std::string thisSubFilename(par.rsampledir);
 	  thisSubFilename.append("/");
 	  thisSubFilename.append(par.vmm.sub[subIdx].name);
 	  thisSubFilename.append(".nii.gz");
 	  outImagePtr->FillBuffer(0);
-
 	  for (lemon::SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=lemon::INVALID; ++ nodeIt) {
 	       // if this is subject node.
-	       if (coordMap[nodeIt].subid < par.numSubs) {
+	       if (coordMap[nodeIt].subid == subIdx) {
 		    outImageIdx[0] = coordMap[nodeIt].idx[0];
 		    outImageIdx[1] = coordMap[nodeIt].idx[1];
 		    outImageIdx[2] = coordMap[nodeIt].idx[2];
-		    for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
-			 outImageIdx[3] = clsIdx;
-			 outImagePtr->SetPixel(outImageIdx, rSampleMap[nodeIt][clsIdx]);
-		    }
+		    outImageIdx[3] = rSampleMap[nodeIt].find_first();
+		    // if (outImageIdx[0] == 30 && outImageIdx[1] == 1 && outImageIdx[2] == 0 && coordMap[nodeIt].subid == 0)
+		    // {
+		    // 	 printf("something to look at.");
+		    // }
+		    outImagePtr->SetPixel(outImageIdx, 1);
 	       }
 	  } // nodeIt
 
@@ -207,26 +173,24 @@ int SaveRunningSample(lemon::SmartGraph & theGraph,
 	  }      
      } // subIdx
 
-     std::cout << "SaveRunningSample(): Subject samples saved into folder " << outdir << std::endl;
+     std::cout << "SaveRunningSample(): Subject samples saved into folder " << par.rsampledir << std::endl;
 
      // Now it's for group 
-     // write number of samples in a cluster to the file.
+     outImagePtr->FillBuffer(0);
      for (lemon::SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=lemon::INVALID; ++ nodeIt) {
 	  // if this is group node.
 	  if (coordMap[nodeIt].subid == par.numSubs) {
 	       outImageIdx[0] = coordMap[nodeIt].idx[0];
 	       outImageIdx[1] = coordMap[nodeIt].idx[1];
 	       outImageIdx[2] = coordMap[nodeIt].idx[2];
-	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
-		    outImageIdx[3] = clsIdx;
-		    outGrpImagePtr->SetPixel(outImageIdx, rSampleMap[nodeIt][clsIdx]);
-	       }
+	       outImageIdx[3] = rSampleMap[nodeIt].find_first();
+	       outImagePtr->SetPixel(outImageIdx, 1);
 	  }
      } // nodeIt
 
      WriterType4DS::Pointer writer = WriterType4DS::New();
-     writer->SetInput( outGrpImagePtr );
-     std::string outGrpFile = outdir.append("/");
+     writer->SetInput( outImagePtr );
+     std::string outGrpFile = par.rsampledir.append("/");
      outGrpFile.append("grp.nii.gz");
      writer->SetFileName(outGrpFile);
 
@@ -365,4 +329,15 @@ int printVnlVector(vnl_vector<float> vec, unsigned numElements)
      }
      printf("]\n");
      return (0);
+}
+
+int PrintBitSet(boost::dynamic_bitset<> bitset)
+{
+     printf("[ ");
+     for (unsigned i = 0; i < bitset.size(); i++){
+	  printf("%d ", bitset[i]);
+     }
+     printf("]");
+
+     return 0;
 }
