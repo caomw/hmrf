@@ -40,10 +40,7 @@ int SaveCumuSamples(lemon::SmartGraph & theGraph,
      outImagePtr->FillBuffer(0);
      
      for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	  std::string thisSubFilename(par.cumusampledir);
-	  thisSubFilename.append("/");
-	  thisSubFilename.append(par.vmm.sub[subIdx].name);
-	  thisSubFilename.append(".nii.gz");
+	  std::string thisSubFilename = par.cumusampledir + "/" + par.vmm.sub[subIdx].name + ".nii.gz";
 	  outImagePtr->FillBuffer(0);
 
 	  for (lemon::SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=lemon::INVALID; ++ nodeIt) {
@@ -93,8 +90,7 @@ int SaveCumuSamples(lemon::SmartGraph & theGraph,
 
      WriterType4DS::Pointer writer = WriterType4DS::New();
      writer->SetInput( outImagePtr );
-     std::string outGrpFile = par.cumusampledir.append("/");
-     outGrpFile.append("grp.nii.gz");
+     std::string outGrpFile = par.cumusampledir + "/" + "grp.nii.gz";
      writer->SetFileName(outGrpFile);
 
      try 
@@ -135,12 +131,9 @@ int SaveRunningSamples(lemon::SmartGraph & theGraph,
      outImagePtr->Allocate();
      outImagePtr->FillBuffer(0);
 
-
+     std::string thisSubFilename;
      for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	  std::string thisSubFilename(par.rsampledir);
-	  thisSubFilename.append("/");
-	  thisSubFilename.append(par.vmm.sub[subIdx].name);
-	  thisSubFilename.append(".nii.gz");
+	  thisSubFilename = par.rsampledir + "/" + par.vmm.sub[subIdx].name + ".nii.gz";
 	  outImagePtr->FillBuffer(0);
 	  for (lemon::SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=lemon::INVALID; ++ nodeIt) {
 	       // if this is subject node.
@@ -149,10 +142,6 @@ int SaveRunningSamples(lemon::SmartGraph & theGraph,
 		    outImageIdx[1] = coordMap[nodeIt].idx[1];
 		    outImageIdx[2] = coordMap[nodeIt].idx[2];
 		    outImageIdx[3] = rSampleMap[nodeIt].find_first();
-		    // if (outImageIdx[0] == 30 && outImageIdx[1] == 1 && outImageIdx[2] == 0 && coordMap[nodeIt].subid == 0)
-		    // {
-		    // 	 printf("something to look at.");
-		    // }
 		    outImagePtr->SetPixel(outImageIdx, 1);
 	       }
 	  } // nodeIt
@@ -160,7 +149,6 @@ int SaveRunningSamples(lemon::SmartGraph & theGraph,
 	  WriterType4DS::Pointer writer = WriterType4DS::New();
 	  writer->SetInput( outImagePtr );
 	  writer->SetFileName(thisSubFilename);
-
 	  try 
 	  { 
 	       writer->Update(); 
@@ -190,8 +178,7 @@ int SaveRunningSamples(lemon::SmartGraph & theGraph,
 
      WriterType4DS::Pointer writer = WriterType4DS::New();
      writer->SetInput( outImagePtr );
-     std::string outGrpFile = par.rsampledir.append("/");
-     outGrpFile.append("grp.nii.gz");
+     std::string outGrpFile = par.rsampledir + "/" + "grp.nii.gz";
      writer->SetFileName(outGrpFile);
 
      try 
@@ -331,13 +318,3 @@ int printVnlVector(vnl_vector<float> vec, unsigned numElements)
      return (0);
 }
 
-int PrintBitSet(boost::dynamic_bitset<> bitset)
-{
-     printf("[ ");
-     for (unsigned i = 0; i < bitset.size(); i++){
-	  printf("%d ", bitset[i]);
-     }
-     printf("]");
-
-     return 0;
-}

@@ -24,7 +24,8 @@ int BuildEdgeMap(lemon::SmartGraph & theGraph,
 int InitSubSamples(std::string srcpath,
 		   lemon::SmartGraph & theGraph, 
 		   lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		   lemon::SmartGraph::NodeMap<unsigned short> & initSubjectMap);
+		   lemon::SmartGraph::NodeMap<unsigned short> & initSubjectMap,
+		   ParStruct & par);
 
 int EstimateMu(lemon::SmartGraph & theGraph, 
 	       lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
@@ -163,7 +164,6 @@ int main(int argc, char* argv[])
 
      // output label init'd.
      ImageType3DChar::Pointer labelPtr = myfilter->GetOutput();
-     save3dcharInc(labelPtr, "initGrpLabelCheck.nii.gz");
 
      // original 1-based group map only used for mask.
      ImageType3DChar::Pointer maskPtr = grpReader->GetOutput();
@@ -209,7 +209,9 @@ int main(int argc, char* argv[])
      // define a subject initial label map used for initialization of subject
      // label map.
      lemon::SmartGraph::NodeMap<unsigned short> initSubjectMap(theGraph);     
-     InitSubSamples(initsubpath, theGraph, coordMap, initSubjectMap);
+     if (!initsame) {
+	  InitSubSamples(initsubpath, theGraph, coordMap, initSubjectMap, par);
+     }
 
      // define cumulative sample map. Each node is assigned a vector. The k'th
      // elements of the vector is the number of samples that falls into cluster
@@ -230,7 +232,9 @@ int main(int argc, char* argv[])
 	       cumuSampleMap[nodeIt].at(labelPtr->GetPixel(coordMap[nodeIt].idx)) = par.numSamples;
 	  }
      }
-     SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
+     if (par.verbose >= 2) {
+	  SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
+     }
      
      // define a running sample map and init it with the input group
      // labels. This is used for sampling only. And when the whoel scan is done,
@@ -246,7 +250,9 @@ int main(int argc, char* argv[])
 
 	  }
      }
-     SaveRunningSamples(theGraph, coordMap, rSampleMap, par);
+     if (par.verbose >= 2) {
+	  SaveRunningSamples(theGraph, coordMap, rSampleMap, par);
+     }
 
      // as initial step, esimate mu and kappa.
      EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
@@ -259,7 +265,6 @@ int main(int argc, char* argv[])
 	  par.temperature = par.initTemp * pow( (par.finalTemp / par.initTemp), float(emIterIdx) / float(emIter) );
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
 	  SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
-	  SaveRunningSamples(theGraph, coordMap, rSampleMap, par);
 
 	  CompuTotalEnergy(theGraph, coordMap, cumuSampleMap, edgeMap, tsMap, par); 
 	  
@@ -554,7 +559,8 @@ int BuildDataMap(lemon::SmartGraph & theGraph,
 int InitSubSamples(std::string srcpath,
 		   lemon::SmartGraph & theGraph, 
 		   lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		   lemon::SmartGraph::NodeMap<unsigned short> & initSubjectMap)
+		   lemon::SmartGraph::NodeMap<unsigned short> & initSubjectMap,
+		   ParStruct & par)
 {
      // some of the code below refers to boost filesystem tutorial tut04.cpp.
      // prepare for sorting directory entries.
@@ -562,14 +568,15 @@ int InitSubSamples(std::string srcpath,
      PathVec  sortedEntries;
      copy(boost::filesystem::directory_iterator(srcpath), boost::filesystem::directory_iterator(), std::back_inserter(sortedEntries) );
      sort(sortedEntries.begin(), sortedEntries.end() );
-     unsigned numSubs  = sortedEntries.size();
-
-     printf("InitSubSamples(): numSubs = %i\n", numSubs);
+     if (sortedEntries.size() != par.numSubs) {
+	  std::cout << "number of files in " << srcpath << "is not equal to number of files in fmri path.\n";
+	  exit(1);
+     }
 
      // init file reader pointers.
-     std::vector<ReaderType3DChar::Pointer> readerVec(numSubs);
-     std::vector<ImageType3DChar::Pointer> srcPtrVec(numSubs);
-     for (unsigned subIdx = 0; subIdx < numSubs; subIdx ++) {
+     std::vector<ReaderType3DChar::Pointer> readerVec(par.numSubs);
+     std::vector<ImageType3DChar::Pointer> srcPtrVec(par.numSubs);
+     for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
 	  readerVec[subIdx] = ReaderType3DChar::New();
 	  readerVec[subIdx]->SetFileName( sortedEntries[subIdx].string() );
 	  readerVec[subIdx]->Update();
@@ -581,8 +588,11 @@ int InitSubSamples(std::string srcpath,
      	  superCoord = coordMap[nodeIt];
 	  // when not in group map, do this step, since this function only read
 	  // in subject's initial label map.
-	  if (superCoord.subid < numSubs) {
+	  if (superCoord.subid < par.numSubs) {
 	       initSubjectMap[nodeIt] = srcPtrVec[superCoord.subid]->GetPixel(superCoord.idx) - 1;
+	  }
+	  else {
+	       initSubjectMap[nodeIt] = -1;
 	  }
      }
      return 0;
@@ -595,7 +605,6 @@ int EstimateMu(lemon::SmartGraph & theGraph,
 	       lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 	       ParStruct & par)
 {
-
      // reset all mu and numPts to zero.
      for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
 	  for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
@@ -649,11 +658,6 @@ int EstimateKappa(lemon::SmartGraph & theGraph,
 
 		    RBar = par.vmm.sub[subIdx].comp[clsIdx].meanNorm;
 		    kappa_new = RBar * (Dim - RBar * RBar) / (1 - RBar * RBar);
-		    if (kappa_new  == 0 ) {
-			 par.vmm.sub[subIdx].comp[clsIdx].kappa = kappa_new;
-			 continue;
-		    }
-	       
 		    unsigned iter = 0;
 		    do {
 			 iter ++;
@@ -695,15 +699,16 @@ int Sampling(lemon::SmartGraph & theGraph,
 	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 	     ParStruct & par)
 {
-
      unsigned taskid = 0;
      pthread_t thread_ids[par.nthreads];
      ThreadArgs threadArgs[par.nthreads];
 
      // reset cumuSampleMap to zero.
+     printf("reset cumuSampleMap begin...");
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  cumuSampleMap[nodeIt].assign(par.numClusters, 0);
      }
+     printf("done.\n");
 
      // Compute the number of nodes that each thread computes.
      unsigned totalNumNodes = theGraph.maxNodeId()+1;     
@@ -748,12 +753,13 @@ int Sampling(lemon::SmartGraph & theGraph,
 	  else {
 	       threadArgs[taskid].endNodeid = (taskid + 1) * numNodesPerThread -1;
 	  }
+
+	  printf("task %d's nodes: %d -- %d\n", taskid, threadArgs[taskid].startNodeid, threadArgs[taskid].endNodeid);
      }
 
      // sampling starts here.
      printf("Sampling() starts scan...\n");
      for (unsigned scanIdx = 0; scanIdx < par.burnin + par.numSamples; scanIdx ++) {
-
 	  printf("%i, ", scanIdx+1);
 	  fflush(stdout);
 	  for (taskid = 0; taskid < par.nthreads; taskid ++) {
@@ -764,13 +770,17 @@ int Sampling(lemon::SmartGraph & theGraph,
 	       pthread_join(thread_ids[taskid], NULL);
 	  }
 
-	  // after burnin pariod, save it to correct place.
+	  // after burnin peroid, save it to correct place.
 	  if (scanIdx >= par.burnin) {
 	       for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 		    cumuSampleMap[nodeIt][rSampleMap[nodeIt].find_first()] ++;
 	       }
-
 	  }
+
+	  if (par.verbose >=3) {
+	       SaveRunningSamples(theGraph, coordMap, rSampleMap, par);
+	  }
+
      } // scanIdx
 	    
      printf("Sampling done.\n");
@@ -781,7 +791,6 @@ int Sampling(lemon::SmartGraph & theGraph,
 void *SamplingThreads(void * threadArgs)
 {
      ThreadArgs * args = (ThreadArgs *) threadArgs;
-     // unsigned taskid = args->taskid;
      lemon::SmartGraph * theGraphPtr = args->theGraphPtr;
      lemon::SmartGraph::NodeMap<SuperCoordType> * coordMapPtr = args->coordMapPtr;
      lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > * rSampleMapPtr = args->rSampleMapPtr;
@@ -789,7 +798,6 @@ void *SamplingThreads(void * threadArgs)
      lemon::SmartGraph::NodeMap<vnl_vector<float>> * tsMapPtr = args->tsMapPtr;
      std::vector< vnl_vector<double> > * vmfLogConstPtr = args->vmfLogConstPtr;
      ParStruct * parPtr = args->parPtr;
-     // unsigned numThreads = args->numThreads;
 
      // define random generator.
      boost::random::mt19937 gen;
@@ -811,49 +819,50 @@ void *SamplingThreads(void * threadArgs)
      for (sweepIdx = 0 ;sweepIdx < parPtr->sweepPerThread; sweepIdx ++) {
 	  for (unsigned nodeId = args->startNodeid; nodeId <= args->endNodeid; nodeId++) {
 	       curNode = (*theGraphPtr).nodeFromId(nodeId);
-
 	       // compute old and new prior energy.
 	       oldPriorEngy = 0;
 	       newPriorEngy = 0;
 	       cand.reset();
 	       cand[roll_die(gen)] = 1;
 	       for (SmartGraph::IncEdgeIt edgeIt(*theGraphPtr, curNode); edgeIt != INVALID; ++ edgeIt) {
-	  	    oldPriorEngy += (*edgeMapPtr)[edgeIt] * Phi( (*rSampleMapPtr)[(*theGraphPtr).u(edgeIt)], (*rSampleMapPtr)[(*theGraphPtr).v(edgeIt)]);
-	  	    newPriorEngy += (*edgeMapPtr)[edgeIt] * Phi(cand, (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
+	       	    oldPriorEngy += (*edgeMapPtr)[edgeIt] * Phi( 
+	       		 (*rSampleMapPtr)[(*theGraphPtr).baseNode(edgeIt)], 
+	       		 (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
+	       	    newPriorEngy += (*edgeMapPtr)[edgeIt] * Phi(
+	       		 cand, 
+	       		 (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
 	       }
 	       denergy = newPriorEngy - oldPriorEngy;
 
 	       // if current node is in subject, compute data term. Otherwise,
-	       // the current node must be in group. Then do not compute data
-	       // term.
+	       // do not compute data term.
 	       if ( (*coordMapPtr)[curNode].subid < (*parPtr).numSubs) {
-		    cl = (*rSampleMapPtr)[curNode].find_first(); // current label.
-		    nl = cand.find_first(); // new label.
-		    s = (*coordMapPtr)[curNode].subid;
-		    oldDataEngy = - (*vmfLogConstPtr)[s][cl] - (*parPtr).vmm.sub[s].comp[cl].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[cl].mu);
-		    newDataEngy = - (*vmfLogConstPtr)[s][nl] - (*parPtr).vmm.sub[s].comp[nl].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[nl].mu);
-		    denergy = denergy + (newDataEngy - oldDataEngy);
+	       	    cl = (*rSampleMapPtr)[curNode].find_first(); // current label.
+	       	    nl = cand.find_first(); // new label.
+	       	    s = (*coordMapPtr)[curNode].subid;
+	       	    oldDataEngy = - (*vmfLogConstPtr)[s][cl] - (*parPtr).vmm.sub[s].comp[cl].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[cl].mu);
+	       	    newDataEngy = - (*vmfLogConstPtr)[s][nl] - (*parPtr).vmm.sub[s].comp[nl].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[nl].mu);
+	       	    denergy = denergy + (newDataEngy - oldDataEngy);
+	       }
+	       else {
 	       }
 	       denergy = denergy / (*parPtr).temperature;
 
 	       if (denergy < 0) {
-		    // std::cout <<(*rSampleMapPtr)[curNode] << "--->" << cand << "\n";
-		    // printf("cl=%d, nl=%d, sub=%d, coord=[%d %d %d].\n", cl, nl, s, (*coordMapPtr)[curNode].idx[0], (*coordMapPtr)[curNode].idx[1], (*coordMapPtr)[curNode].idx[2]);
-		    (*rSampleMapPtr)[curNode] = cand;
-		    // std::cout << "new value: " << (*rSampleMapPtr)[curNode] << "\n";
+	       	    (*rSampleMapPtr)[curNode] = cand;
 	       }
 	       else if (denergy > 0) {
-		    p_acpt = exp(-denergy);
-		    if (uni() < p_acpt) {
-			 (*rSampleMapPtr)[curNode] = cand;
-		    }
+	       	    p_acpt = exp(-denergy);
+	       	    if (uni() < p_acpt) {
+	       		 (*rSampleMapPtr)[curNode] = cand;
+	       	    }
 	       } // else if
 	       else {
-		    // candidate = current label. No change.
+	       	    // candidate = current label. No change.
 	       }
 	  } // curNode
      } // sweepIdx
-}
+} 
 
 unsigned short Phi(boost::dynamic_bitset<> xi, boost::dynamic_bitset<> xj)
 {
@@ -920,18 +929,18 @@ int CompuTotalEnergy(lemon::SmartGraph & theGraph,
 	  }
      } // for subIdx.
 
-     
      // cl is current label, s is subject id.
      unsigned short s = 0;
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  if (coordMap[nodeIt].subid < par.numSubs) {
 	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 		    // check if clsIdx has some samples that fall into it. If there
-		    // are n samples, just compute one sample's energy and times n.
+		    // are n samples, just compute one sample's energy and time n.
 		    if (cumuSampleMap[nodeIt][clsIdx] > 0) {
 			 s = coordMap[nodeIt].subid;
 			 sampleDataEng = vmfLogConst[s][clsIdx] + par.vmm.sub[s].comp[clsIdx].kappa * inner_product(tsMap[nodeIt], par.vmm.sub[s].comp[clsIdx].mu);
 			 totalDataEng += cumuSampleMap[nodeIt][clsIdx] * sampleDataEng;
+			 // check if NaN.
 			 if (totalDataEng != totalDataEng) {
 			      printf("NAN happend at sub: %d, [%d %d %d]\n", s, coordMap[nodeIt].idx[0], coordMap[nodeIt].idx[1], coordMap[nodeIt].idx[2]);
 			      exit(1);
@@ -947,7 +956,6 @@ int CompuTotalEnergy(lemon::SmartGraph & theGraph,
      totalDataEng = - totalDataEng;
 
      printf("totalPriorEng: %E, totalDataEng: %E, total energy ( E[log P(X,Y)] ): %E.\n", totalPriorEng, totalDataEng, totalPriorEng + totalDataEng);
-     
      return 0;
 }
 

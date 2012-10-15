@@ -12,7 +12,6 @@ int SaveRunningSamples(lemon::SmartGraph & theGraph,
 		       ParStruct & par);
 
 int PrintPar(unsigned prlevel, ParStruct & par);
-int PrintBitSet(boost::dynamic_bitset<> bitset);
 
 int save3dcharInc(ImageType3DChar::Pointer ip, std::string fname);
 

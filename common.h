@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <cmath>
+#include <ctime>
 #include <cassert>
 #include <new>
 #include <iostream>
