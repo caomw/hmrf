@@ -752,8 +752,6 @@ int Sampling(lemon::SmartGraph & theGraph,
 	  else {
 	       threadArgs[taskid].endNodeid = (taskid + 1) * numNodesPerThread -1;
 	  }
-
-	  printf("task %d's nodes: %d -- %d\n", taskid, threadArgs[taskid].startNodeid, threadArgs[taskid].endNodeid);
      }
 
      // sampling starts here.
@@ -799,7 +797,7 @@ void *SamplingThreads(void * threadArgs)
      ParStruct * parPtr = args->parPtr;
 
      // define random generator.
-     boost::random::mt19937 gen;
+     boost::random::mt19937 gen(std::time(0));
      boost::random::uniform_int_distribution<> roll_die(0, (*parPtr).numClusters - 1);
 
      boost::uniform_real<> uni_dist(0,1); // uniform distribution.
@@ -841,7 +839,7 @@ void *SamplingThreads(void * threadArgs)
 	       	    s = (*coordMapPtr)[curNode].subid;
 	       	    oldDataEngy = - (*vmfLogConstPtr)[s][cl] - (*parPtr).vmm.sub[s].comp[cl].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[cl].mu);
 	       	    newDataEngy = - (*vmfLogConstPtr)[s][nl] - (*parPtr).vmm.sub[s].comp[nl].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[nl].mu);
-	       	    denergy = denergy + (newDataEngy - oldDataEngy);
+	       	    denergy = denergy + parPtr->gamma * (newDataEngy - oldDataEngy);
 	       }
 	       else {
 	       }

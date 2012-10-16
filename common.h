@@ -20,7 +20,7 @@
 #include <lemon/smart_graph.h>
 #include <lemon/adaptors.h>
 #include <lemon/connectivity.h>
-
+ 
 #include <boost/math/distributions/normal.hpp> // for normal_distribution.
 #include <boost/math/distributions/beta.hpp>
 #include <boost/math/special_functions/bessel.hpp>
@@ -101,7 +101,7 @@ typedef itk::Image<float, 5> ImageType5DFloat;
 
 typedef itk::ImageFileReader< ImageType2D >  ReaderType;
 typedef itk::ImageFileReader< ImageType3D >  ReaderType3D;
-typedef itk::ImageFileReader< ImageType3DShort >  ReaderType3DShot;
+typedef itk::ImageFileReader< ImageType3DShort >  ReaderType3DShort;
 typedef itk::ImageFileReader< ImageType3DChar >  ReaderType3DChar;
 typedef itk::ImageFileReader< ImageType3DFloat >  ReaderType3DFloat;
 typedef itk::ImageFileReader< ImageType4DChar >  ReaderType4DChar;
@@ -131,6 +131,7 @@ typedef itk::ImageRegionConstIterator< ImageType3DChar > ConstIteratorType3DChar
 typedef itk::ImageRegionIterator< ImageType2D>       IteratorType2D;
 typedef itk::ImageRegionIterator< ImageType3D>       IteratorType3D;
 typedef itk::ImageRegionIterator< ImageType3DChar>       IteratorType3DChar;
+typedef itk::ImageRegionIterator< ImageType3DShort>       IteratorType3DShort;
 typedef itk::ImageRegionIteratorWithIndex< ImageType3DChar>       IteratorType3DCharIdx;
 typedef itk::ImageRegionIterator< ImageType3DFloat>       IteratorType3DFloat;
 typedef itk::ImageRegionIteratorWithIndex< ImageType3DChar>       IteratorType3DCharIdx;
