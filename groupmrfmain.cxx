@@ -50,7 +50,6 @@ int Sampling(lemon::SmartGraph & theGraph,
 	     ParStruct & par);
 
 void *SamplingThreads(void * threadArgs);
-unsigned short Phi(boost::dynamic_bitset<> xi, boost::dynamic_bitset<> xj);
 
 int CompuTotalEnergy(lemon::SmartGraph & theGraph, 
 		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
@@ -825,11 +824,11 @@ void *SamplingThreads(void * threadArgs)
 	       cand.reset();
 	       cand[roll_die(gen)] = 1;
 	       for (SmartGraph::IncEdgeIt edgeIt(*theGraphPtr, curNode); edgeIt != INVALID; ++ edgeIt) {
-	       	    oldPriorEngy += (*edgeMapPtr)[edgeIt] * Phi( 
-	       		 (*rSampleMapPtr)[(*theGraphPtr).baseNode(edgeIt)], 
+	       	    oldPriorEngy += (*edgeMapPtr)[edgeIt] * (
+	       		 (*rSampleMapPtr)[(*theGraphPtr).baseNode(edgeIt)] != 
 	       		 (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
-	       	    newPriorEngy += (*edgeMapPtr)[edgeIt] * Phi(
-	       		 cand, 
+	       	    newPriorEngy += (*edgeMapPtr)[edgeIt] * (
+	       		 cand !=
 	       		 (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
 	       }
 	       denergy = newPriorEngy - oldPriorEngy;
@@ -864,11 +863,6 @@ void *SamplingThreads(void * threadArgs)
      } // sweepIdx
 } 
 
-unsigned short Phi(boost::dynamic_bitset<> xi, boost::dynamic_bitset<> xj)
-{
-     return ((xi == xj) ? 0:1);
-}
-
 int CompuTotalEnergy(lemon::SmartGraph & theGraph, 
 		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 		     lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
@@ -893,7 +887,7 @@ int CompuTotalEnergy(lemon::SmartGraph & theGraph,
 			 superCoord = coordMap[nodeIt];
 			 for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
 			      superCoord = coordMap[theGraph.runningNode(edgeIt)];
-			      b = b - edgeMap[edgeIt] * Phi(runningBit, curBit) ;
+			      b = b - edgeMap[edgeIt] * (runningBit != curBit) ;
 			 } // incEdgeIt
 			 M0 += exp (b);
 
