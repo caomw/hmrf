@@ -873,7 +873,9 @@ int CompuTotalEnergy(lemon::SmartGraph & theGraph,
      double totalPriorEng = 0, totalDataEng = 0;
      double samplePriorEng = 0, sampleDataEng = 0;
      boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
-     double b = 0, bcur = 0, M0 = 0;
+     double bcur = 0, bmin = 0;
+     unsigned l = 0;
+     vnl_vector<double> b(par.numClusters);
      SuperCoordType superCoord;
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
@@ -881,21 +883,24 @@ int CompuTotalEnergy(lemon::SmartGraph & theGraph,
 	       // are n samples, just compute one sample's energy and times n.
 	       if (cumuSampleMap[nodeIt][clsIdx] > 0) {
 		    curBit.reset(), curBit[clsIdx] = 1;
-		    M0 = 0;
-		    for (runningBit.reset(), runningBit[0]=1; !runningBit.test(par.numClusters-1); runningBit<<=1) {
-			 b = 0;
+		    b.fill(0);
+		    for (l = 0; l < par.numClusters; l++) {
+		    // for (runningBit.reset(), runningBit[0]=1; !runningBit.test(par.numClusters-1); runningBit<<=1) {
+			 runningBit.reset(), runningBit[l] = 1;
 			 superCoord = coordMap[nodeIt];
 			 for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
 			      superCoord = coordMap[theGraph.runningNode(edgeIt)];
-			      b = b - edgeMap[edgeIt] * (runningBit != curBit) ;
+			      b[l] = b[l] - edgeMap[edgeIt] * (runningBit != curBit) ;
 			 } // incEdgeIt
-			 M0 += exp (b);
 
-			 if (runningBit == curBit) {
-			      bcur = b;
-			 }
-		    } // runningBit.
-		    samplePriorEng = (bcur - log(M0));
+			 if (l == clsIdx) bcur = b[l];
+		    } // for l
+		    bmin = b.min_value();
+
+		    samplePriorEng = bcur + bmin;
+		    for (l = 0; l < par.numClusters; l ++) {
+			 samplePriorEng += exp(b[l] - bmin);
+		    }
 		    totalPriorEng += cumuSampleMap[nodeIt][clsIdx] * samplePriorEng;
 	       } // cumuSampleMap > 0
 	  } // clsIdx
