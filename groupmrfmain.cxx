@@ -279,9 +279,6 @@ int main(int argc, char* argv[])
      	  printf("EM iteration %i begin:\n", emIterIdx + 1);
 	  par.temperature = par.initTemp * pow( (par.finalTemp / par.initTemp), float(emIterIdx) / float(emIter) );
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
-	  if (par.verbose >=1) {
-	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
-	  }
 	  SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
 	  
      	  // estimate vMF parameters mu, kappa.
@@ -289,9 +286,6 @@ int main(int argc, char* argv[])
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
 	  EstimateKappa(theGraph, par);
 	  PrintPar(2, par);
-	  if (par.verbose >=1) {
-	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
-	  }
      } // emIterIdx
 
      return 0;
@@ -796,9 +790,7 @@ int Sampling(lemon::SmartGraph & theGraph,
 	       pthread_join(thread_ids[taskid], NULL);
 	  }
 
-	  if (par.verbose >=3) {
-	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
-	  }
+	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
 	  
 	  // after burnin peroid, save it to correct place.
 	  if (scanIdx >= par.burnin) {
@@ -807,7 +799,7 @@ int Sampling(lemon::SmartGraph & theGraph,
 	       }
 	  }
 
-	  if (par.verbose >=4) {
+	  if (par.verbose >=3) {
 	       SaveRunningSamples(theGraph, coordMap, rSampleMap, par);
 	  }
 
@@ -831,80 +823,65 @@ void *SamplingThreads(void * threadArgs)
 
      // define random generator.
      boost::random::mt19937 gen(std::time(0));
-     boost::random::discrete_distribution<> disc_dist; 
+     boost::random::uniform_int_distribution<> roll_die(0, (*parPtr).numClusters - 1);
 
-     std::vector<double> labelWeightSet((*parPtr).numClusters, 0);
+     boost::uniform_real<> uni_dist(0,1); // uniform distribution.
+     boost::variate_generator<boost::mt19937&, boost::uniform_real<> > uni(gen, uni_dist);
 
      // Sampling starts here.
      unsigned sweepIdx = 0;
-     float priorEngy = 0, dataEngy = 0, engy = 0, minEngy = 0;
-     boost::dynamic_bitset<> cand, runningBit((*parPtr).numClusters);;
+     float oldPriorEngy = 0, newPriorEngy = 0, oldDataEngy = 0, newDataEngy = 0, denergy;
+     boost::dynamic_bitset<> cand;
      cand.resize((*parPtr).numClusters);
+     float p_acpt = 0;
      // cl is current label, and nl is new label. s is subject id.
-     unsigned short cl = 0, s = 0;
+     unsigned short cl = 0, nl = 0, s = 0;
      lemon::SmartGraph::Node curNode;
-     unsigned runningLabel = 0;
 
      for (sweepIdx = 0 ;sweepIdx < parPtr->sweepPerThread; sweepIdx ++) {
 	  for (unsigned nodeId = args->startNodeid; nodeId <= args->endNodeid; nodeId++) {
 	       curNode = (*theGraphPtr).nodeFromId(nodeId);
 	       // compute old and new prior energy.
-
-	       minEngy = 10e6;
-	       for (runningLabel = 0; runningLabel < (*parPtr).numClusters; runningLabel ++) {
-		    cand.reset(), cand[runningLabel] = 1;
-		    priorEngy = 0;
-		    for (SmartGraph::IncEdgeIt edgeIt(*theGraphPtr, curNode); edgeIt != INVALID; ++ edgeIt) {
-			 priorEngy += (*edgeMapPtr)[edgeIt] * (double)(
-			      cand !=
-			      (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
-		    }
-
-		    // if current node is in subject, compute data term. Otherwise,
-		    // do not compute data term.
-		    if ( (*coordMapPtr)[curNode].subid < (*parPtr).numSubs) {
-			 cl = (*rSampleMapPtr)[curNode].find_first(); // current label.
-			 s = (*coordMapPtr)[curNode].subid;
-			 dataEngy = - (*vmfLogConstPtr)[s][runningLabel] - (*parPtr).vmm.sub[s].comp[runningLabel].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[runningLabel].mu);
-		    }
-		    else
-		    {
-			 dataEngy = 0;
-		    }
-		
-		    engy = priorEngy + (*parPtr).gamma * dataEngy;
-
-		    engy = engy / (*parPtr).temperature;
-
-		    if (minEngy > engy) {
-			 minEngy = engy;
-		    }
-		    labelWeightSet[runningLabel] = engy;
-	       } // runningLabel.
-
-	       for (runningLabel = 0; runningLabel < (*parPtr).numClusters; runningLabel ++) {
-		    labelWeightSet[runningLabel] = exp(- (labelWeightSet[runningLabel] - minEngy) );
+	       oldPriorEngy = 0;
+	       newPriorEngy = 0;
+	       cand.reset();
+	       cand[roll_die(gen)] = 1;
+	       for (SmartGraph::IncEdgeIt edgeIt(*theGraphPtr, curNode); edgeIt != INVALID; ++ edgeIt) {
+	       	    oldPriorEngy += (*edgeMapPtr)[edgeIt] * (double)(
+	       		 (*rSampleMapPtr)[(*theGraphPtr).baseNode(edgeIt)] != 
+	       		 (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
+	       	    newPriorEngy += (*edgeMapPtr)[edgeIt] * (double)(
+	       		 cand !=
+	       		 (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
 	       }
+	       denergy = newPriorEngy - oldPriorEngy;
 
-	       // now begin sampling based on labelWeightSet.
-	       boost::random::discrete_distribution<>disc_dist(labelWeightSet.begin(), labelWeightSet.end() );
-	       cand.reset(), cand[disc_dist(gen)] = 1;
-	       
-	       // for debug
-	       if ((*rSampleMapPtr)[curNode] != cand) {
-		    // debug
-		    if((*parPtr).verbose >= 4) {
-			 std::cout << (*rSampleMapPtr)[curNode] << "->" << cand << "  ";
-			 for (runningLabel = 0; runningLabel < (*parPtr).numClusters; runningLabel ++) {
-			      printf("%1.2E ", labelWeightSet[runningLabel]);
-			 }
-			 printf("\n");
-		    }
-		    // end of debug.
-
-		    (*rSampleMapPtr)[curNode] = cand;
+	       // if current node is in subject, compute data term. Otherwise,
+	       // do not compute data term.
+	       if ( (*coordMapPtr)[curNode].subid < (*parPtr).numSubs) {
+	       	    cl = (*rSampleMapPtr)[curNode].find_first(); // current label.
+	       	    nl = cand.find_first(); // new label.
+	       	    s = (*coordMapPtr)[curNode].subid;
+	       	    oldDataEngy = - (*vmfLogConstPtr)[s][cl] - (*parPtr).vmm.sub[s].comp[cl].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[cl].mu);
+	       	    newDataEngy = - (*vmfLogConstPtr)[s][nl] - (*parPtr).vmm.sub[s].comp[nl].kappa * inner_product((*tsMapPtr)[curNode], (*parPtr).vmm.sub[s].comp[nl].mu);
+	       	    denergy = denergy + parPtr->gamma * (newDataEngy - oldDataEngy);
 	       }
-	       
+	       else {
+	       }
+	       denergy = denergy / (*parPtr).temperature;
+
+	       if (denergy < 0) {
+	       	    (*rSampleMapPtr)[curNode] = cand;
+	       }
+	       else if (denergy > 0) {
+	       	    p_acpt = exp(-denergy);
+	       	    if (uni() < p_acpt) {
+	       		 (*rSampleMapPtr)[curNode] = cand;
+	       	    }
+	       } // else if
+	       else {
+	       	    // candidate = current label. No change.
+	       }
 	  } // curNode
      } // sweepIdx
      return 0;
