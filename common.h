@@ -15,6 +15,7 @@
 #include <fstream>
 #include <iomanip>
 #include <algorithm>
+#include <valarray>
 
 #include <lemon/list_graph.h>
 #include <lemon/smart_graph.h>
@@ -30,6 +31,7 @@
 #include <boost/random/uniform_real.hpp>
 #include <boost/random/uniform_01.hpp>
 #include <boost/random/normal_distribution.hpp>
+#include <boost/random/discrete_distribution.hpp>
 
 #include <boost/random/variate_generator.hpp>
 #include <boost/random/uniform_on_sphere.hpp>
