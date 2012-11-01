@@ -19,6 +19,7 @@ int BuildDataMap(lemon::SmartGraph & theGraph,
 int BuildEdgeMap(lemon::SmartGraph & theGraph, 
 		 lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		 lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+		 lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 		 ParStruct & par);
 
 int InitSubSamples(std::string srcpath,
@@ -70,6 +71,13 @@ int EstimateBeta(lemon::SmartGraph & theGraph,
 		lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
 		lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		 ParStruct & par);
+
+int CompSampleEnergy(lemon::SmartGraph & theGraph, 
+		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+		     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+		     lemon::SmartGraph::EdgeMap<double> & edgeMap,
+		     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+		     ParStruct & par);
 
 using namespace lemon;
 int main(int argc, char* argv[])
@@ -129,7 +137,8 @@ int main(int argc, char* argv[])
 	   "whether to estimate alpha and beta, the prior parameter. Default no.")
 	  ("initsame", po::bool_switch(&initsame), 
 	   "whether to init subject same to group label. Default is no.")
-
+	  ("weightbeta", po::bool_switch(&par.weightbeta), 
+	   "whether to weight beta by voxel correlation. Default is no.")
 	   ("initgrouplabel,i", po::value<std::string>(&initGrplabel)->default_value("grouplabel.nii"), 
 	    "Initial group level label map (Intensity value 1-K. Also used as mask file.")
 	   ("initsubpath,t", po::value<std::string>(&initsubpath)->default_value("./subpath"), 
@@ -194,13 +203,14 @@ int main(int argc, char* argv[])
      lemon::SmartGraph::NodeMap<SuperCoordType> coordMap(theGraph); // node --> coordinates.
      BuildGraph(theGraph, coordMap, par.numSubs, maskPtr);
 
-     // Define edge map.
-     lemon::SmartGraph::EdgeMap<double> edgeMap(theGraph);
-     BuildEdgeMap(theGraph, edgeMap, coordMap, par);
-
      // Build Data map.
      lemon::SmartGraph::NodeMap<vnl_vector<float>> tsMap(theGraph); // node --> time series.
      BuildDataMap(theGraph, coordMap, tsMap, fmriPath, par);
+
+     // Define edge map.
+     lemon::SmartGraph::EdgeMap<double> edgeMap(theGraph);
+     BuildEdgeMap(theGraph, edgeMap, coordMap, tsMap, par);
+
 
      // At this point, we know time series length so do the remaining
      // initializaion of par.vmm.
@@ -382,11 +392,11 @@ int BuildGraph(lemon::SmartGraph & theGraph,
      maskNeiIt.OverrideBoundaryCondition(&constCondition);
      
      // xplus, xminus, yplus, yminus, zplus, zminus
-     // std::array<unsigned int, 6 > neiIdxSet = {14, 12, 16, 10, 22, 4}; 
-     // std::array<unsigned int, 26> neiIdxSet = {0,1,2,3,4,5,6,7,8,9,10,11,12,//no 13
-     // 					       14,15,16,17,18,19,20,21,22,23,24,25,26};
-     std::array<unsigned int, 18 > neiIdxSet = {1,3,4,5,7,9,10,11,12,
-						14,15,16,17,19,21,22,23,25};
+     // std::array<unsigned int, 6 > neiIdxSet = {{14, 12, 16, 10, 22, 4}}; 
+     std::array<unsigned int, 26> neiIdxSet = {{ 0,1,2,3,4,5,6,7,8,9,10,11,12,//no 13
+						 14,15,16,17,18,19,20,21,22,23,24,25,26 }};
+     // std::array<unsigned int, 18 > neiIdxSet = {{1,3,4,5,7,9,10,11,12,
+     // 						14,15,16,17,19,21,22,23,25}};
      ImageType3DChar::IndexType maskIdx;
      int curNodeId = 0, neiNodeId = 0;
      // std::array<short, 6>::const_iterator neiIdxIt;
@@ -489,13 +499,19 @@ int BuildGraph(lemon::SmartGraph & theGraph,
 int BuildEdgeMap(lemon::SmartGraph & theGraph, 
 		 lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		 lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+		 lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 		 ParStruct & par)
 {
      for (SmartGraph::EdgeIt edgeIt(theGraph); edgeIt != INVALID; ++ edgeIt) {
 	  if (coordMap[theGraph.u(edgeIt)].subid < par.numSubs && 
 	      coordMap[theGraph.v(edgeIt)].subid < par.numSubs) {
 	       // within subjects.
+	       if (par.weightbeta) {
+		    edgeMap[edgeIt] = 0.5 * par.beta * pow(inner_product(tsMap[theGraph.u(edgeIt)], tsMap[theGraph.v(edgeIt)]) + 1, 2);
+	       }
+	       else {
 	       edgeMap[edgeIt] = par.beta;
+	       }
 	  }
 	  else if (coordMap[theGraph.u(edgeIt)].subid == par.numSubs && 
 		   coordMap[theGraph.v(edgeIt)].subid == par.numSubs) {
@@ -784,6 +800,8 @@ int Sampling(lemon::SmartGraph & theGraph,
 	       pthread_join(thread_ids[taskid], NULL);
 	  }
 
+	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+	  
 	  // after burnin peroid, save it to correct place.
 	  if (scanIdx >= par.burnin) {
 	       for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
@@ -839,10 +857,10 @@ void *SamplingThreads(void * threadArgs)
 	       cand.reset();
 	       cand[roll_die(gen)] = 1;
 	       for (SmartGraph::IncEdgeIt edgeIt(*theGraphPtr, curNode); edgeIt != INVALID; ++ edgeIt) {
-	       	    oldPriorEngy += (*edgeMapPtr)[edgeIt] * (
+	       	    oldPriorEngy += (*edgeMapPtr)[edgeIt] * (double)(
 	       		 (*rSampleMapPtr)[(*theGraphPtr).baseNode(edgeIt)] != 
 	       		 (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
-	       	    newPriorEngy += (*edgeMapPtr)[edgeIt] * (
+	       	    newPriorEngy += (*edgeMapPtr)[edgeIt] * (double)(
 	       		 cand !=
 	       		 (*rSampleMapPtr)[(*theGraphPtr).runningNode(edgeIt)]);
 	       }
@@ -865,17 +883,19 @@ void *SamplingThreads(void * threadArgs)
 	       if (denergy < 0) {
 	       	    (*rSampleMapPtr)[curNode] = cand;
 	       }
-	       else if (denergy > 0) {
-	       	    p_acpt = exp(-denergy);
-	       	    if (uni() < p_acpt) {
-	       		 (*rSampleMapPtr)[curNode] = cand;
-	       	    }
-	       } // else if
-	       else {
-	       	    // candidate = current label. No change.
-	       }
+	       // else if (denergy > 0) {
+	       // 	    p_acpt = exp(-denergy);
+	       // 	    if (uni() < p_acpt) {
+	       // 		 (*rSampleMapPtr)[curNode] = cand;
+	       // 		 printf("e");
+	       // 	    }
+	       // } // else if
+	       // else {
+	       // 	    // candidate = current label. No change.
+	       // }
 	  } // curNode
      } // sweepIdx
+     return 0;
 } 
 
 int CompuTotalEnergy(lemon::SmartGraph & theGraph, 
@@ -889,7 +909,6 @@ int CompuTotalEnergy(lemon::SmartGraph & theGraph,
      double samplePriorEng = 0, sampleDataEng = 0;
      boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
      double b = 0, bcur = 0, M0 = 0;
-     SuperCoordType superCoord;
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 	       // check if clsIdx has some samples that fall into it. If there
@@ -899,10 +918,8 @@ int CompuTotalEnergy(lemon::SmartGraph & theGraph,
 		    M0 = 0;
 		    for (runningBit.reset(), runningBit[0]=1; !runningBit.test(par.numClusters-1); runningBit<<=1) {
 			 b = 0;
-			 superCoord = coordMap[nodeIt];
 			 for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-			      superCoord = coordMap[theGraph.runningNode(edgeIt)];
-			      b = b - edgeMap[edgeIt] * (runningBit != curBit) ;
+			      b = b - edgeMap[edgeIt] * (double)(runningBit != curBit) ;
 			 } // incEdgeIt
 			 M0 += exp (b);
 
@@ -951,7 +968,7 @@ int CompuTotalEnergy(lemon::SmartGraph & theGraph,
 			 totalDataEng += cumuSampleMap[nodeIt][clsIdx] * sampleDataEng;
 			 // check if NaN.
 			 if (totalDataEng != totalDataEng) {
-			      printf("NAN happend at sub: %d, [%d %d %d]\n", s, coordMap[nodeIt].idx[0], coordMap[nodeIt].idx[1], coordMap[nodeIt].idx[2]);
+			      printf("NAN happend at sub: %d, [%d %d %d]\n", s, (int)coordMap[nodeIt].idx[0], (int)coordMap[nodeIt].idx[1], (int)coordMap[nodeIt].idx[2]);
 			      exit(1);
 			 }
 		    } 
@@ -1057,5 +1074,76 @@ int EstimateBeta(lemon::SmartGraph & theGraph,
 	       printf("beta_0 = %1.3f, par.beta = %1.3f, priorEngy = %E", beta_o, par.beta, priorEngy);
 	  }
      } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 3);
+     return 0;
+}
+
+
+
+int CompSampleEnergy(lemon::SmartGraph & theGraph, 
+		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+		     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+		     lemon::SmartGraph::EdgeMap<double> & edgeMap,
+		     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+		     ParStruct & par)
+{
+     double samplePriorEng = 0, sampleDataEng = 0;
+     boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
+     double b = 0, bcur = 0, M0 = 0;
+     for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
+	  curBit = rSampleMap[nodeIt];
+	  M0 = 0;
+	  for (runningBit.reset(), runningBit[0]=1; !runningBit.test(par.numClusters-1); runningBit<<=1) {
+	       b = 0;
+	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
+		    b = b - edgeMap[edgeIt] * (double)(runningBit != curBit) ;
+	       } // incEdgeIt
+	       M0 += exp (b);
+
+	       if (runningBit == curBit) {
+		    bcur = b;
+	       }
+	  } // runningBit.
+	  samplePriorEng += (bcur - log(M0));
+     } // nodeIt
+
+     // convert log likelihood to energy.
+     samplePriorEng = - samplePriorEng;
+
+     // for data energy.
+     std::vector< vnl_vector<double> >vmfLogConst(par.numSubs);
+     float myD = par.tsLength;
+     double const Pi = 4 * atan(1);
+     unsigned subIdx = 0, clsIdx = 0;
+     for (subIdx = 0; subIdx < par.numSubs; subIdx ++) {
+	  vmfLogConst[subIdx].set_size(par.numClusters);
+	  for (clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
+	       if (par.vmm.sub[subIdx].comp[clsIdx].kappa > 1) {
+		    vmfLogConst[subIdx][clsIdx] = (myD/2 - 1) * log (par.vmm.sub[subIdx].comp[clsIdx].kappa) - myD/2 * log(2*Pi) -  logBesselI(myD/2 - 1, par.vmm.sub[subIdx].comp[clsIdx].kappa);
+	       }
+	       else {
+		    vmfLogConst[subIdx][clsIdx] = 25.5; // the limit when kappa -> 0
+	       }
+	  }
+     } // for subIdx.
+
+     // cl is current label, s is subject id.
+     unsigned short s = 0;
+     for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
+	  if (coordMap[nodeIt].subid < par.numSubs) {
+	       s = coordMap[nodeIt].subid;
+	       clsIdx = rSampleMap[nodeIt].find_first();
+	       sampleDataEng += vmfLogConst[s][clsIdx] + par.vmm.sub[s].comp[clsIdx].kappa * inner_product(tsMap[nodeIt], par.vmm.sub[s].comp[clsIdx].mu);
+	       // check if NaN.
+	       if (sampleDataEng != sampleDataEng) {
+		    printf("NAN happend at sub: %d, [%d %d %d]\n", s, (int)coordMap[nodeIt].idx[0], (int)coordMap[nodeIt].idx[1], (int)coordMap[nodeIt].idx[2]);
+		    exit(1);
+	       }
+	  } // subid < numSubs
+     } // nodeIt
+
+     // convert log likelihood to energy.
+     sampleDataEng = - sampleDataEng;
+
+     printf("samplePriorEng: %E, sampleDataEng: %E, single sample energy (- log P(X,Y) ): %E.\n", samplePriorEng, sampleDataEng, samplePriorEng + sampleDataEng);
      return 0;
 }

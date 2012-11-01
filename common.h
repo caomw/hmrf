@@ -194,6 +194,7 @@ struct ParStruct
      ImageType3DChar::SizeType maskSize;
      std::string cumusampledir;
      std::string rsampledir;
+     bool weightbeta;
 };
 
 // super coordinates that also include subject id. 
@@ -218,4 +219,4 @@ struct ThreadArgs{
 };
 
 
-#endif
+#endif 
