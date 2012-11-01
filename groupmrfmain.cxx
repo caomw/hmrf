@@ -52,13 +52,6 @@ int Sampling(lemon::SmartGraph & theGraph,
 
 void *SamplingThreads(void * threadArgs);
 
-int CompuTotalEnergy(lemon::SmartGraph & theGraph, 
-		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		     lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-		     lemon::SmartGraph::EdgeMap<double> & edgeMap,
-		     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
-		     ParStruct & par);
-
 int CompBetaDrv(lemon::SmartGraph & theGraph, 
 		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 		lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
@@ -287,15 +280,12 @@ int main(int argc, char* argv[])
 	  par.temperature = par.initTemp * pow( (par.finalTemp / par.initTemp), float(emIterIdx) / float(emIter) );
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
 	  SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
-
-	  CompuTotalEnergy(theGraph, coordMap, cumuSampleMap, edgeMap, tsMap, par); 
 	  
      	  // estimate vMF parameters mu, kappa.
      	  printf("EM iteration %i, parameter estimation begin. \n", emIterIdx + 1);
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
 	  EstimateKappa(theGraph, par);
 	  PrintPar(2, par);
-	  CompuTotalEnergy(theGraph, coordMap, cumuSampleMap, edgeMap, tsMap, par); 
      } // emIterIdx
 
      return 0;
@@ -883,108 +873,19 @@ void *SamplingThreads(void * threadArgs)
 	       if (denergy < 0) {
 	       	    (*rSampleMapPtr)[curNode] = cand;
 	       }
-	       // else if (denergy > 0) {
-	       // 	    p_acpt = exp(-denergy);
-	       // 	    if (uni() < p_acpt) {
-	       // 		 (*rSampleMapPtr)[curNode] = cand;
-	       // 		 printf("e");
-	       // 	    }
-	       // } // else if
-	       // else {
-	       // 	    // candidate = current label. No change.
-	       // }
+	       else if (denergy > 0) {
+	       	    p_acpt = exp(-denergy);
+	       	    if (uni() < p_acpt) {
+	       		 (*rSampleMapPtr)[curNode] = cand;
+	       	    }
+	       } // else if
+	       else {
+	       	    // candidate = current label. No change.
+	       }
 	  } // curNode
      } // sweepIdx
      return 0;
 } 
-
-int CompuTotalEnergy(lemon::SmartGraph & theGraph, 
-		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		     lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-		     lemon::SmartGraph::EdgeMap<double> & edgeMap,
-		     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
-		     ParStruct & par)
-{
-     double totalPriorEng = 0, totalDataEng = 0;
-     double samplePriorEng = 0, sampleDataEng = 0;
-     boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
-     double b = 0, bcur = 0, M0 = 0;
-     for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
-	  for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
-	       // check if clsIdx has some samples that fall into it. If there
-	       // are n samples, just compute one sample's energy and times n.
-	       if (cumuSampleMap[nodeIt][clsIdx] > 0) {
-		    curBit.reset(), curBit[clsIdx] = 1;
-		    M0 = 0;
-		    for (runningBit.reset(), runningBit[0]=1; !runningBit.test(par.numClusters-1); runningBit<<=1) {
-			 b = 0;
-			 for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-			      b = b - edgeMap[edgeIt] * (double)(runningBit != curBit) ;
-			 } // incEdgeIt
-			 M0 += exp (b);
-
-			 if (runningBit == curBit) {
-			      bcur = b;
-			 }
-		    } // runningBit.
-		    samplePriorEng = (bcur - log(M0));
-		    totalPriorEng += cumuSampleMap[nodeIt][clsIdx] * samplePriorEng;
-	       } // cumuSampleMap > 0
-	  } // clsIdx
-     } // nodeIt
-
-     totalPriorEng = totalPriorEng / par.numSamples;
-
-     // convert log likelihood to energy.
-     totalPriorEng = - totalPriorEng;
-
-     // for data energy.
-     std::vector< vnl_vector<double> >vmfLogConst(par.numSubs);
-     float myD = par.tsLength;
-     double const Pi = 4 * atan(1);
-     unsigned subIdx = 0, clsIdx = 0;
-     for (subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	  vmfLogConst[subIdx].set_size(par.numClusters);
-	  for (clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
-	       if (par.vmm.sub[subIdx].comp[clsIdx].kappa > 1) {
-		    vmfLogConst[subIdx][clsIdx] = (myD/2 - 1) * log (par.vmm.sub[subIdx].comp[clsIdx].kappa) - myD/2 * log(2*Pi) -  logBesselI(myD/2 - 1, par.vmm.sub[subIdx].comp[clsIdx].kappa);
-	       }
-	       else {
-		    vmfLogConst[subIdx][clsIdx] = 25.5; // the limit when kappa -> 0
-	       }
-	  }
-     } // for subIdx.
-
-     // cl is current label, s is subject id.
-     unsigned short s = 0;
-     for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
-	  if (coordMap[nodeIt].subid < par.numSubs) {
-	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
-		    // check if clsIdx has some samples that fall into it. If there
-		    // are n samples, just compute one sample's energy and time n.
-		    if (cumuSampleMap[nodeIt][clsIdx] > 0) {
-			 s = coordMap[nodeIt].subid;
-			 sampleDataEng = vmfLogConst[s][clsIdx] + par.vmm.sub[s].comp[clsIdx].kappa * inner_product(tsMap[nodeIt], par.vmm.sub[s].comp[clsIdx].mu);
-			 totalDataEng += cumuSampleMap[nodeIt][clsIdx] * sampleDataEng;
-			 // check if NaN.
-			 if (totalDataEng != totalDataEng) {
-			      printf("NAN happend at sub: %d, [%d %d %d]\n", s, (int)coordMap[nodeIt].idx[0], (int)coordMap[nodeIt].idx[1], (int)coordMap[nodeIt].idx[2]);
-			      exit(1);
-			 }
-		    } 
-	       }// clsIdx
-	  } // subid < numSubs
-     } // nodeIt
-
-     totalDataEng = totalDataEng / par.numSamples;
-
-     // convert log likelihood to energy.
-     totalDataEng = - totalDataEng;
-
-     printf("totalPriorEng: %E, totalDataEng: %E, total energy ( E[log P(X,Y)] ): %E.\n", totalPriorEng, totalDataEng, totalPriorEng + totalDataEng);
-     return 0;
-}
-
 
 int CompBetaDrv(lemon::SmartGraph & theGraph, 
 		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
@@ -1089,13 +990,15 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
      double samplePriorEng = 0, sampleDataEng = 0;
      boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
      double b = 0, bcur = 0, M0 = 0;
+     unsigned runningLabel = 0;
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  curBit = rSampleMap[nodeIt];
 	  M0 = 0;
-	  for (runningBit.reset(), runningBit[0]=1; !runningBit.test(par.numClusters-1); runningBit<<=1) {
+	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
+	       runningBit.reset(), runningBit[runningLabel] = 1;
 	       b = 0;
 	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-		    b = b - edgeMap[edgeIt] * (double)(runningBit != curBit) ;
+		    b = b - edgeMap[edgeIt] * (double)(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 	       } // incEdgeIt
 	       M0 += exp (b);
 
@@ -1111,7 +1014,7 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 
      // for data energy.
      std::vector< vnl_vector<double> >vmfLogConst(par.numSubs);
-     float myD = par.tsLength;
+     double myD = par.tsLength;
      double const Pi = 4 * atan(1);
      unsigned subIdx = 0, clsIdx = 0;
      for (subIdx = 0; subIdx < par.numSubs; subIdx ++) {
