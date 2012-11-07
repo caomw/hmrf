@@ -280,12 +280,14 @@ int main(int argc, char* argv[])
 	  par.temperature = par.initTemp * pow( (par.finalTemp / par.initTemp), float(emIterIdx) / float(emIter) );
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
 	  SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
+	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
 	  
      	  // estimate vMF parameters mu, kappa.
      	  printf("EM iteration %i, parameter estimation begin. \n", emIterIdx + 1);
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
 	  EstimateKappa(theGraph, par);
 	  PrintPar(2, par);
+	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
      } // emIterIdx
 
      return 0;
@@ -790,7 +792,9 @@ int Sampling(lemon::SmartGraph & theGraph,
 	       pthread_join(thread_ids[taskid], NULL);
 	  }
 
-	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+	  if (par.verbose >= 3) {
+	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+	  }
 	  
 	  // after burnin peroid, save it to correct place.
 	  if (scanIdx >= par.burnin) {

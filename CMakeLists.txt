@@ -43,6 +43,10 @@ ADD_EXECUTABLE(applymask
   applymask.cxx
   )
 
+ADD_EXECUTABLE(seedcorr
+  seedcorr.cxx
+  )
+
 
 
 TARGET_LINK_LIBRARIES(groupmrf emon ${ITK_LIBRARIES} boost_program_options boost_filesystem)
@@ -52,6 +56,7 @@ TARGET_LINK_LIBRARIES(sample2label ${ITK_LIBRARIES} boost_program_options boost_
 TARGET_LINK_LIBRARIES(copyheader ${ITK_LIBRARIES} boost_program_options boost_filesystem)
 
 TARGET_LINK_LIBRARIES(applymask ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(seedcorr ${ITK_LIBRARIES} boost_program_options boost_filesystem)
 
 
 
