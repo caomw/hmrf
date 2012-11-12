@@ -72,6 +72,13 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 		     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 		     ParStruct & par);
 
+int PlotBeta(lemon::SmartGraph & theGraph, 
+	     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+	     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+	     lemon::SmartGraph::EdgeMap<double> & edgeMap,
+	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+	     ParStruct & par);
+
 using namespace lemon;
 int main(int argc, char* argv[])
 {
@@ -288,7 +295,8 @@ int main(int argc, char* argv[])
      	  printf("EM iteration %i, parameter estimation begin. \n", emIterIdx + 1);
 	  // estimate prior parameter, now beta.
 	  if(estprior) {
-	       EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
+	       // EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
+	       PlotBeta(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par);
 	  }
 
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
@@ -1004,26 +1012,24 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
 		    if ( (coordMap[theGraph.u(edgeIt)].subid == par.numClusters && coordMap[theGraph.v(edgeIt)].subid == par.numClusters)
 			 || (coordMap[theGraph.u(edgeIt)].subid < par.numClusters && coordMap[theGraph.v(edgeIt)].subid < par.numClusters) ){
 			 // within group or within subject
-
 			 if (par.weightbetadist){
 			      weightIdx = abs(coordMap[theGraph.u(edgeIt)].idx[0] - coordMap[theGraph.v(edgeIt)].idx[0]) 
 				   + abs(coordMap[theGraph.u(edgeIt)].idx[1] - coordMap[theGraph.v(edgeIt)].idx[1]) 
 				   + abs(coordMap[theGraph.u(edgeIt)].idx[2] - coordMap[theGraph.v(edgeIt)].idx[2])
 				   -1;
 
-			      b = b - distWeight[weightIdx] * double(runningBit != curBit) ;
+			      b = b - distWeight[weightIdx] * double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 			 }
 			 else {
-			      b = b - double(runningBit != curBit) ;
+			      b = b - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 			 } // weightbetadist
 		    } // within grp or sub.
 		    else {
 			 // btw group and subjects.
-			 a = a - double(runningBit != curBit);
+			 a = a - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 		    }
 	       } // incEdgeIt
 
-	       // printf("M0=%E, a = %f, b = %f.\n", M0, a, b);
 	       M0 += exp (a * par.alpha + b * par.beta );
 
 	       M1 += b * exp(a * par.alpha + b * par.beta);
@@ -1037,8 +1043,7 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
 	  } // runningLabel
 
 	  drv1 += (bcur - M1/M0);
-	  drv2 += (M2*M0 - M1*M1)/(M0*M0);
-	  // printf("priorEngy = %E, acur = %f, bcur = %f, M0 = %E\n", priorEngy, acur, bcur, M0); 
+	  drv2 -= (M2*M0 - M1*M1)/(M0*M0);
 	  priorEngy += (acur * par.alpha + bcur * par.beta - log (M0) );
      } // nodeIt
 	  
@@ -1067,5 +1072,24 @@ int EstimateBeta(lemon::SmartGraph & theGraph,
 	       printf("drv1 = %E, drv2 = %E, beta_o = %1.3f, par.beta = %1.3f, priorEngy = %E\n", drv1, drv2, beta_o, par.beta, priorEngy);
 	  }
      } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 3);
+     return 0;
+}
+
+
+int PlotBeta(lemon::SmartGraph & theGraph, 
+	     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+	     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+	     lemon::SmartGraph::EdgeMap<double> & edgeMap,
+	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+	     ParStruct & par)
+{
+ 
+     double beta_old = par.beta;
+     for (par.beta = 0.01; par.beta < 0.5; par.beta = par.beta + 0.05) {
+	  BuildEdgeMap(theGraph, edgeMap, coordMap, tsMap, par);
+	  printf("beta = %2.2f, ", par.beta);
+	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+     }
+     par.beta = beta_old;
      return 0;
 }
