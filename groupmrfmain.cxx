@@ -54,14 +54,14 @@ void *SamplingThreads(void * threadArgs);
 
 int CompBetaDrv(lemon::SmartGraph & theGraph, 
 		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
+		lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
 		lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		ParStruct & par,
 		double & drv1, double & drv2);
 
 int EstimateBeta(lemon::SmartGraph & theGraph, 
 		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
+		lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
 		lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		 ParStruct & par);
 
@@ -130,8 +130,10 @@ int main(int argc, char* argv[])
 	   "whether to estimate alpha and beta, the prior parameter. Default no.")
 	  ("initsame", po::bool_switch(&initsame), 
 	   "whether to init subject same to group label. Default is no.")
-	  ("weightbeta", po::bool_switch(&par.weightbeta), 
+	  ("weightbetadata", po::bool_switch(&par.weightbetadata), 
 	   "whether to weight beta by voxel correlation. Default is no.")
+	  ("weightbetadist", po::bool_switch(&par.weightbetadist), 
+	   "whether to weight beta by voxel's spatial distance. Default is no.")
 	   ("initgrouplabel,i", po::value<std::string>(&initGrplabel)->default_value("grouplabel.nii"), 
 	    "Initial group level label map (Intensity value 1-K. Also used as mask file.")
 	   ("initsubpath,t", po::value<std::string>(&initsubpath)->default_value("./subpath"), 
@@ -203,7 +205,6 @@ int main(int argc, char* argv[])
      // Define edge map.
      lemon::SmartGraph::EdgeMap<double> edgeMap(theGraph);
      BuildEdgeMap(theGraph, edgeMap, coordMap, tsMap, par);
-
 
      // At this point, we know time series length so do the remaining
      // initializaion of par.vmm.
@@ -281,9 +282,15 @@ int main(int argc, char* argv[])
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
 	  SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
 	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
-	  
+
+
      	  // estimate vMF parameters mu, kappa.
      	  printf("EM iteration %i, parameter estimation begin. \n", emIterIdx + 1);
+	  // estimate prior parameter, now beta.
+	  if(estprior) {
+	       EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
+	  }
+
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
 	  EstimateKappa(theGraph, par);
 	  PrintPar(2, par);
@@ -494,12 +501,21 @@ int BuildEdgeMap(lemon::SmartGraph & theGraph,
 		 lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 		 ParStruct & par)
 {
+     unsigned weightIdx = 0;
+     std::array<double, 3> distWeight = {{BETAWEIGHT0, BETAWEIGHT1, BETAWEIGHT2}};
      for (SmartGraph::EdgeIt edgeIt(theGraph); edgeIt != INVALID; ++ edgeIt) {
 	  if (coordMap[theGraph.u(edgeIt)].subid < par.numSubs && 
 	      coordMap[theGraph.v(edgeIt)].subid < par.numSubs) {
 	       // within subjects.
-	       if (par.weightbeta) {
+	       if (par.weightbetadata) {
 		    edgeMap[edgeIt] = 0.5 * par.beta * pow(inner_product(tsMap[theGraph.u(edgeIt)], tsMap[theGraph.v(edgeIt)]) + 1, 2);
+	       }
+	       else if (par.weightbetadist){
+		    weightIdx = abs(coordMap[theGraph.u(edgeIt)].idx[0] - coordMap[theGraph.v(edgeIt)].idx[0]) 
+			 + abs(coordMap[theGraph.u(edgeIt)].idx[1] - coordMap[theGraph.v(edgeIt)].idx[1]) 
+			 + abs(coordMap[theGraph.u(edgeIt)].idx[2] - coordMap[theGraph.v(edgeIt)].idx[2])
+			 -1;
+		    edgeMap[edgeIt] = distWeight[weightIdx] * par.beta;
 	       }
 	       else {
 	       edgeMap[edgeIt] = par.beta;
@@ -891,98 +907,6 @@ void *SamplingThreads(void * threadArgs)
      return 0;
 } 
 
-int CompBetaDrv(lemon::SmartGraph & theGraph, 
-		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-		lemon::SmartGraph::EdgeMap<double> & edgeMap,
-		ParStruct & par,
-		double & drv1, double & drv2)
-{
-     double a = 0, b = 0, M0 = 0, M1 = 0, M2 = 0, acur = 0, bcur = 0;
-     drv1 = 0, drv2 = 0;
-     double sampledrv1 = 0, sampledrv2 = 0, samplePriorEngy = 0, priorEngy = 0;
-     boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
-
-     for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
-	  for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
-	       // check if clsIdx has some samples that fall into it. If there
-	       // are n samples, just compute one sample's energy and times n.
-	       if (cumuSampleMap[nodeIt][clsIdx] > 0) {
-		    M0 = 0, M1 = 0, M2 = 0;
-		    curBit.reset(), curBit[clsIdx] = 1;
-		    for (runningBit.reset(), runningBit[0]=1; !runningBit.test(par.numClusters-1); runningBit<<=1) {
-			 a = 0, b = 0;
-			 for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-			      if (coordMap[theGraph.u(edgeIt)].subid == par.numClusters && coordMap[theGraph.v(edgeIt)].subid == par.numClusters) {
-				   // within group.
-				   b = b - int(runningBit != curBit) ;
-			      }
-			      else if (coordMap[theGraph.u(edgeIt)].subid < par.numClusters && coordMap[theGraph.v(edgeIt)].subid < par.numClusters) {
-					// within subjects.
-					b = b - int(runningBit != curBit) ;
-			      }
-			      else {
-				   // btw group and subjects.
-				   a = a - int(runningBit != curBit);
-			      }
-			 } // incEdgeIt
-
-			 if (runningBit == curBit) {
-			      acur = a;
-			      bcur = b;
-			 }
-
-			 M0 += exp (b);
-			 M1 += b * exp(a * par.alpha + b * par.beta);
-			 M2 += b * b * exp (a * par.alpha + b * par.beta);
-
-		    } // runningBit.
-		    sampledrv1 = (bcur - M1/M0);
-		    sampledrv2 = (M2*M0 - M1*M1)/(M0*M0);
-		    samplePriorEngy = (acur * par.alpha + bcur * par.beta - log (M0) );
-
-		    // there are more than one samples here, so we should add
-		    // multiple sample derivatives.
-		    drv1 += sampledrv1 * cumuSampleMap[nodeIt][clsIdx];
-		    drv2 += sampledrv2 * cumuSampleMap[nodeIt][clsIdx];
-		    priorEngy += samplePriorEngy * cumuSampleMap[nodeIt][clsIdx];
-	       } // cumuSampleMap...>0
-	  } // for clsIdx
-     }
-
-     // normalize by num of samples
-     drv1 = drv1 / par.numSamples, drv2 = drv2 / par.numSamples;
-     priorEngy = priorEngy / par.numSamples;
-	  
-     // convert log likelihood to energy.
-     drv1 = - drv1, drv2 = - drv2;
-     priorEngy = - priorEngy;
-
-     return priorEngy;
-
-}
-
-int EstimateBeta(lemon::SmartGraph & theGraph, 
-		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-		lemon::SmartGraph::EdgeMap<double> & edgeMap,
-		ParStruct & par)
-{
-     double beta_o = 0, priorEngy = 0;;
-     unsigned numIter = 0;
-     double drv1 = 0, drv2 = 0;
-     do {
-	  beta_o = par.beta;
-	  priorEngy = CompBetaDrv(theGraph, coordMap, cumuSampleMap, edgeMap, par, drv1, drv2);
-	  par.beta = par.beta - (drv1/drv2);
-	  if (par.verbose >= 2) {
-	       printf("beta_0 = %1.3f, par.beta = %1.3f, priorEngy = %E", beta_o, par.beta, priorEngy);
-	  }
-     } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 3);
-     return 0;
-}
-
-
 
 int CompSampleEnergy(lemon::SmartGraph & theGraph, 
 		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
@@ -993,24 +917,24 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 {
      double samplePriorEng = 0, sampleDataEng = 0;
      boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
-     double b = 0, bcur = 0, M0 = 0;
+     double c = 0, ccur = 0, M0 = 0;
      unsigned runningLabel = 0;
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  curBit = rSampleMap[nodeIt];
 	  M0 = 0;
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
 	       runningBit.reset(), runningBit[runningLabel] = 1;
-	       b = 0;
+	       c = 0;
 	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-		    b = b - edgeMap[edgeIt] * (double)(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+		    c = c - edgeMap[edgeIt] * (double)(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 	       } // incEdgeIt
-	       M0 += exp (b);
+	       M0 += exp (c);
 
 	       if (runningBit == curBit) {
-		    bcur = b;
+		    ccur = c;
 	       }
 	  } // runningBit.
-	  samplePriorEng += (bcur - log(M0));
+	  samplePriorEng += (ccur - log(M0));
      } // nodeIt
 
      // convert log likelihood to energy.
@@ -1052,5 +976,96 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
      sampleDataEng = - sampleDataEng;
 
      printf("samplePriorEng: %E, sampleDataEng: %E, single sample energy (- log P(X,Y) ): %E.\n", samplePriorEng, sampleDataEng, samplePriorEng + sampleDataEng);
+     return 0;
+}
+
+
+int CompBetaDrv(lemon::SmartGraph & theGraph, 
+		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+		lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+		lemon::SmartGraph::EdgeMap<double> & edgeMap,
+		ParStruct & par,
+		double & drv1, double & drv2)
+{
+     double a = 0, b = 0, M0 = 0, M1 = 0, M2 = 0, acur = 0, bcur = 0;
+     drv1 = 0, drv2 = 0;
+     double priorEngy = 0;
+     boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
+     std::array<double, 3> distWeight = {{BETAWEIGHT0, BETAWEIGHT1, BETAWEIGHT2}};
+     unsigned runningLabel = 0, weightIdx = 0;
+
+     for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
+	  curBit = rSampleMap[nodeIt];
+	  M0 = 0, M1 = 0, M2 = 0;
+	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
+	       runningBit.reset(), runningBit[runningLabel] = 1;
+	       a = 0, b = 0;
+	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
+		    if ( (coordMap[theGraph.u(edgeIt)].subid == par.numClusters && coordMap[theGraph.v(edgeIt)].subid == par.numClusters)
+			 || (coordMap[theGraph.u(edgeIt)].subid < par.numClusters && coordMap[theGraph.v(edgeIt)].subid < par.numClusters) ){
+			 // within group or within subject
+
+			 if (par.weightbetadist){
+			      weightIdx = abs(coordMap[theGraph.u(edgeIt)].idx[0] - coordMap[theGraph.v(edgeIt)].idx[0]) 
+				   + abs(coordMap[theGraph.u(edgeIt)].idx[1] - coordMap[theGraph.v(edgeIt)].idx[1]) 
+				   + abs(coordMap[theGraph.u(edgeIt)].idx[2] - coordMap[theGraph.v(edgeIt)].idx[2])
+				   -1;
+
+			      b = b - distWeight[weightIdx] * double(runningBit != curBit) ;
+			 }
+			 else {
+			      b = b - double(runningBit != curBit) ;
+			 } // weightbetadist
+		    } // within grp or sub.
+		    else {
+			 // btw group and subjects.
+			 a = a - double(runningBit != curBit);
+		    }
+	       } // incEdgeIt
+
+	       // printf("M0=%E, a = %f, b = %f.\n", M0, a, b);
+	       M0 += exp (a * par.alpha + b * par.beta );
+
+	       M1 += b * exp(a * par.alpha + b * par.beta);
+	       M2 += b * b * exp (a * par.alpha + b * par.beta);
+
+	       if (runningBit == curBit) {
+		    acur = a;
+		    bcur = b;
+	       }
+
+	  } // runningLabel
+
+	  drv1 += (bcur - M1/M0);
+	  drv2 += (M2*M0 - M1*M1)/(M0*M0);
+	  // printf("priorEngy = %E, acur = %f, bcur = %f, M0 = %E\n", priorEngy, acur, bcur, M0); 
+	  priorEngy += (acur * par.alpha + bcur * par.beta - log (M0) );
+     } // nodeIt
+	  
+     // convert log likelihood to energy.
+     drv1 = - drv1, drv2 = - drv2;
+     priorEngy = - priorEngy;
+
+     return priorEngy;
+}
+
+int EstimateBeta(lemon::SmartGraph & theGraph, 
+		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+		lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+		lemon::SmartGraph::EdgeMap<double> & edgeMap,
+		ParStruct & par)
+{
+     double beta_o = 0, priorEngy = 0;;
+     unsigned numIter = 0;
+     double drv1 = 0, drv2 = 0;
+     do {
+	  numIter ++;
+	  beta_o = par.beta;
+	  priorEngy = CompBetaDrv(theGraph, coordMap, rSampleMap, edgeMap, par, drv1, drv2);
+	  par.beta = par.beta - (drv1/drv2);
+	  if (par.verbose >= 2) {
+	       printf("drv1 = %E, drv2 = %E, beta_o = %1.3f, par.beta = %1.3f, priorEngy = %E\n", drv1, drv2, beta_o, par.beta, priorEngy);
+	  }
+     } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 3);
      return 0;
 }

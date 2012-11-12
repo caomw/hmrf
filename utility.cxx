@@ -192,6 +192,7 @@ int SaveRunningSamples(lemon::SmartGraph & theGraph,
 	  return EXIT_FAILURE;
      }      
      std::cout << "SaveRunnignSample(): File  " << outGrpFile << " saved.\n";
+     return 0;
 }
 
 int PrintPar(unsigned prlevel, ParStruct & par)
@@ -206,7 +207,7 @@ int PrintPar(unsigned prlevel, ParStruct & par)
 
 	  
 	  for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	       printf("%s%-09d", "sub", subIdx+1);
+	       printf("%s%-9d", "sub", subIdx+1);
 	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 
 		    printf("[%3.2f %3.2f] ", par.vmm.sub[subIdx].comp[clsIdx].mu[0], par.vmm.sub[subIdx].comp[clsIdx].mu[1]);
@@ -224,7 +225,7 @@ int PrintPar(unsigned prlevel, ParStruct & par)
 
 	  
 	  for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	       printf("%s%-08d", "sub", subIdx+1);
+	       printf("%s%-8d", "sub", subIdx+1);
 	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 
 		    printf("%12.4f", par.vmm.sub[subIdx].comp[clsIdx].kappa);
@@ -241,9 +242,9 @@ int PrintPar(unsigned prlevel, ParStruct & par)
 	  printf("\n");
 
 	  for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	       printf("%s%-08d", "sub", subIdx+1);
+	       printf("%s%-8d", "sub", subIdx+1);
 	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
-		    printf("%12d", par.vmm.sub[subIdx].comp[clsIdx].numPts);
+		    printf("%12ld", par.vmm.sub[subIdx].comp[clsIdx].numPts);
 	       }
 	       printf("\n");
 	  } // subIdx

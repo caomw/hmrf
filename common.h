@@ -194,9 +194,11 @@ struct ParStruct
      ImageType3DChar::SizeType maskSize;
      std::string cumusampledir;
      std::string rsampledir;
-     bool weightbeta;
+     bool weightbetadata;
+     bool weightbetadist;
+     bool estbeta;
 };
-
+ 
 // super coordinates that also include subject id. 
 struct SuperCoordType {
      ImageType3DChar::IndexType idx;
@@ -218,5 +220,9 @@ struct ThreadArgs{
      unsigned endNodeid;
 };
 
-
+// the beta smoothness parameter can be weighted by the spatial distance between
+// two voxels.
+#define BETAWEIGHT0 1
+#define BETAWEIGHT1 0.7
+#define BETAWEIGHT2 0.6
 #endif 
