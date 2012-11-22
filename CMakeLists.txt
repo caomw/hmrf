@@ -51,6 +51,9 @@ ADD_EXECUTABLE(compareclusterings
   compareclusterings.cxx
   )
 
+ADD_EXECUTABLE(alignlabelmaps
+  alignlabelmaps.cxx
+  )
 
 
 TARGET_LINK_LIBRARIES(groupmrf emon ${ITK_LIBRARIES} boost_program_options boost_filesystem)
@@ -63,6 +66,8 @@ TARGET_LINK_LIBRARIES(applymask ${ITK_LIBRARIES} boost_program_options boost_fil
 TARGET_LINK_LIBRARIES(seedcorr ${ITK_LIBRARIES} boost_program_options boost_filesystem)
 
 TARGET_LINK_LIBRARIES(compareclusterings ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+
+TARGET_LINK_LIBRARIES(alignlabelmaps ${ITK_LIBRARIES} boost_program_options boost_filesystem)
 
 
 

@@ -204,7 +204,6 @@ int PrintPar(unsigned prlevel, ParStruct & par)
 	       printf("%10s%02d", "mu_", clsIdx+1);
 	  }
 	  printf("\n");
-
 	  
 	  for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
 	       printf("%s%-9d", "sub", subIdx+1);

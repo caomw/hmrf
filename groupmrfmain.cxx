@@ -249,10 +249,20 @@ int main(int argc, char* argv[])
      // same to the initial group or subject label map.
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  if (coordMap[nodeIt].subid < par.numSubs && (!initsame) ) {
-	       cumuSampleMap[nodeIt].at(initSubjectMap[nodeIt]) = par.numSamples;
+	       if (initSubjectMap[nodeIt] < par.numClusters) {
+		    cumuSampleMap[nodeIt].at(initSubjectMap[nodeIt]) = par.numSamples;
+	       }
+	       else {
+		    cumuSampleMap[nodeIt].at(0) = par.numSamples;
+	       }
 	  }
 	  else {
-	       cumuSampleMap[nodeIt].at(labelPtr->GetPixel(coordMap[nodeIt].idx)) = par.numSamples;
+	       if (labelPtr->GetPixel(coordMap[nodeIt].idx) < par.numClusters) {
+		    cumuSampleMap[nodeIt].at(labelPtr->GetPixel(coordMap[nodeIt].idx)) = par.numSamples;
+	       }
+	       else {
+		    cumuSampleMap[nodeIt].at(0) = par.numSamples;
+	       }
 	  }
      }
      if (par.verbose >= 2) {
@@ -266,11 +276,20 @@ int main(int argc, char* argv[])
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  rSampleMap[nodeIt].resize(par.numClusters, 0);
 	  if (coordMap[nodeIt].subid < par.numSubs && (!initsame) ) {
-	       rSampleMap[nodeIt].set(initSubjectMap[nodeIt], true);
+	       if (initSubjectMap[nodeIt] < par.numClusters) {
+		    rSampleMap[nodeIt].set(initSubjectMap[nodeIt], true);
+	       }
+	       else {
+		    rSampleMap[nodeIt].set(0, true);
+	       }
 	  }
 	  else {
-	       rSampleMap[nodeIt].set(labelPtr->GetPixel(coordMap[nodeIt].idx), true);
-
+	       if (labelPtr->GetPixel(coordMap[nodeIt].idx) < par.numClusters) {
+		    rSampleMap[nodeIt].set(labelPtr->GetPixel(coordMap[nodeIt].idx), true);
+	       }
+	       else {
+		    rSampleMap[nodeIt].set(0, true);
+	       }
 	  }
      }
      if (par.verbose >= 2) {
@@ -287,16 +306,18 @@ int main(int argc, char* argv[])
      	  printf("EM iteration %i begin:\n", emIterIdx + 1);
 	  par.temperature = par.initTemp * pow( (par.finalTemp / par.initTemp), float(emIterIdx) / float(emIter) );
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
-	  SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
-	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+	  if (par.verbose >= 2) {
+	       SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
+	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+	  }
 
 
      	  // estimate vMF parameters mu, kappa.
      	  printf("EM iteration %i, parameter estimation begin. \n", emIterIdx + 1);
 	  // estimate prior parameter, now beta.
 	  if(estprior) {
-	       // EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
-	       PlotBeta(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par);
+	       EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
+	       // PlotBeta(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par);
 	  }
 
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
@@ -304,6 +325,9 @@ int main(int argc, char* argv[])
 	  PrintPar(2, par);
 	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
      } // emIterIdx
+
+     SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
+     SaveRunningSamples(theGraph, coordMap, rSampleMap, par);
 
      return 0;
 }     
@@ -866,6 +890,7 @@ void *SamplingThreads(void * threadArgs)
      unsigned short cl = 0, nl = 0, s = 0;
      lemon::SmartGraph::Node curNode;
 
+
      for (sweepIdx = 0 ;sweepIdx < parPtr->sweepPerThread; sweepIdx ++) {
 	  for (unsigned nodeId = args->startNodeid; nodeId <= args->endNodeid; nodeId++) {
 	       curNode = (*theGraphPtr).nodeFromId(nodeId);
@@ -909,6 +934,7 @@ void *SamplingThreads(void * threadArgs)
 	       } // else if
 	       else {
 	       	    // candidate = current label. No change.
+	       	    (*rSampleMapPtr)[curNode] = cand;
 	       }
 	  } // curNode
      } // sweepIdx

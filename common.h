@@ -223,6 +223,6 @@ struct ThreadArgs{
 // the beta smoothness parameter can be weighted by the spatial distance between
 // two voxels.
 #define BETAWEIGHT0 1
-#define BETAWEIGHT1 0.7
-#define BETAWEIGHT2 0.6
+#define BETAWEIGHT1 0
+#define BETAWEIGHT2 0
 #endif 
