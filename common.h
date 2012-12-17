@@ -98,6 +98,7 @@ typedef itk::Image<float, 4> Image4DFloat;
 typedef itk::Image<char, 5> ImageType5DChar;
 typedef itk::Image<char, 6> ImageType6DChar;
 typedef itk::Image<float, 5> ImageType5DFloat;
+typedef itk::Image<std::vector< std::vector<double> >, 3 > ImageTypeMat;
 
 typedef itk::ImageFileReader< ImageType2D >  ReaderType;
 typedef itk::ImageFileReader< ImageType3D >  ReaderType3D;
@@ -147,6 +148,10 @@ typedef itk::AddConstantToImageFilter <ImageType3DChar, unsigned char, ImageType
 
 typedef itk::ConstantBoundaryCondition< ImageType3DChar >  MyBoundCondType;
 typedef itk::NeighborhoodIterator< ImageType3DChar> NeighborhoodIteratorType;
+typedef itk::ImageRegionIterator< ImageTypeMat > IteratorTypeMat;
+
+typedef std::vector<boost::filesystem::path> PathVec;
+typedef std::vector< std::vector< boost::filesystem::path> > PathMat;
 
 struct  CompType
 {

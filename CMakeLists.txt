@@ -55,6 +55,18 @@ ADD_EXECUTABLE(alignlabelmaps
   alignlabelmaps.cxx
   )
 
+ADD_EXECUTABLE(geticc
+  geticc.cxx
+  )
+
+ADD_EXECUTABLE(geticcs
+  geticcs.cxx
+  )
+
+ADD_EXECUTABLE(get012
+  get012.cxx
+  )
+
 
 TARGET_LINK_LIBRARIES(groupmrf emon ${ITK_LIBRARIES} boost_program_options boost_filesystem)
 TARGET_LINK_LIBRARIES(label2ind ${ITK_LIBRARIES} boost_program_options boost_filesystem)
@@ -68,6 +80,10 @@ TARGET_LINK_LIBRARIES(seedcorr ${ITK_LIBRARIES} boost_program_options boost_file
 TARGET_LINK_LIBRARIES(compareclusterings ${ITK_LIBRARIES} boost_program_options boost_filesystem)
 
 TARGET_LINK_LIBRARIES(alignlabelmaps ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+
+TARGET_LINK_LIBRARIES(geticc ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(geticcs ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(get012 ${ITK_LIBRARIES} boost_program_options boost_filesystem)
 
 
 
