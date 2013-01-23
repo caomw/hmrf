@@ -317,7 +317,6 @@ int main(int argc, char* argv[])
 	  // estimate prior parameter, now beta.
 	  if(estprior) {
 	       EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
-	       // PlotBeta(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par);
 	  }
 
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);

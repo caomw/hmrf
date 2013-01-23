@@ -1,10 +1,4 @@
 #include <common.h>
-
-struct ICC{
-     double rho_u;
-     double rho_c;
-};
-
 int PrintMat(std::vector< std::vector< double > > mat);
 
 int PrintPathMat(PathMat pathMat);
@@ -13,13 +7,12 @@ int LoadData(std::string datapath,
 	     ImageTypeMat::Pointer dataPtr,
 	     ImageType3DChar::Pointer maskPtr);
 
-ICC ComputeICC(const std::vector< std::vector< double > > & mat);
-
+double ComputeMeasure(const std::vector< std::vector< double > > & mat, std::string measure);
 
 int main(int argc, char* argv[])
 {
      unsigned short verbose = 0;
-     std::string inpath, iccufile, icccfile, maskfile;
+     std::string inpath, measureType, outfile, maskfile;
 
      // Declare a group of options that will be allowed only on
      // command line
@@ -32,10 +25,10 @@ int main(int argc, char* argv[])
 	   "Input data path. This path contains multiple session folder, which contains subject files.")
 	  ("mask,m", po::value<std::string>(&maskfile)->default_value("mask.nii.gz"), 
 	   "mask file with in-mask value > 0.")
-	  ("iccu,u", po::value<std::string>(&iccufile)->default_value("iccumap.nii.gz"), 
-	   "Output icc map that does penalize system error")
-	  ("iccc,c", po::value<std::string>(&icccfile)->default_value("icccmap.nii.gz"), 
-	   "Output icc map that does NOT penalize system error.");
+	  ("measureType,t", po::value<std::string>(&measureType)->default_value("icc1w"), 
+	   "Output measure: icc_c (without sys error), icc_u (with sys error), icc1w (1-way ANOVA's ICC), MS_p (btw rows var), MS_w (within-row var), MS_t (btw column var), MS_e (error's var")
+	  ("out,o", po::value<std::string>(&outfile)->default_value("measure.nii.gz"), 
+	   "Output measurement map.");
 
      po::variables_map vm;        
      po::store(po::parse_command_line(argc, argv, mydesc), vm);
@@ -71,42 +64,31 @@ int main(int argc, char* argv[])
      IteratorTypeMat dataIt(dataPtr, dataPtr->GetLargestPossibleRegion() );
 
      
-     // output icc map file.
-     ImageType3DFloat::IndexType iccIndex;
-     iccIndex.Fill( 0 );
-     ImageType3DFloat::RegionType iccRegion;
-     iccRegion.SetSize(maskSize);
-     iccRegion.SetIndex(iccIndex);
-     ImageType3DFloat::Pointer icccPtr = ImageType3DFloat::New();
-     ImageType3DFloat::Pointer iccuPtr = ImageType3DFloat::New();
-     icccPtr->SetRegions(iccRegion), iccuPtr->SetRegions(iccRegion);
-     icccPtr->Allocate(), iccuPtr->Allocate();
-     icccPtr->FillBuffer( 0 ), iccuPtr->FillBuffer( 0 );
-     
-     IteratorType3DFloat icccIt(icccPtr, icccPtr->GetLargestPossibleRegion() );
-     IteratorType3DFloat iccuIt(iccuPtr, iccuPtr->GetLargestPossibleRegion() );
+     // output map file.
+     ImageType3DFloat::IndexType outIndex;
+     outIndex.Fill( 0 );
+     ImageType3DFloat::RegionType outRegion;
+     outRegion.SetSize(maskSize);
+     outRegion.SetIndex(outIndex);
+     ImageType3DFloat::Pointer outPtr = ImageType3DFloat::New();
+     outPtr->SetRegions(outRegion);
+     outPtr->Allocate();
+     outPtr->FillBuffer( 0 );
+     IteratorType3DFloat outIt(outPtr, outPtr->GetLargestPossibleRegion() );
 
-     // compute ICC_u and ICC_c
-     ImageType3DChar::IndexType maskIdx;
-     maskIdx[0] = 44;
-     maskIdx[1] = 33;
-     maskIdx[2] = 30;
-     ICC icc;
-     for (icccIt.GoToBegin(), iccuIt.GoToBegin(), maskIt.GoToBegin(), dataIt.GoToBegin(); !maskIt.IsAtEnd(); ++ icccIt, ++ iccuIt, ++ maskIt, ++ dataIt) {
+
+     // compute measures
+     double outMeasure;
+     for (outIt.GoToBegin(), maskIt.GoToBegin(), dataIt.GoToBegin(); !maskIt.IsAtEnd(); ++ outIt, ++ maskIt, ++ dataIt) {
 	  if(maskIt.Get() > 0) {
-	       icc = ComputeICC( dataIt.Get() );
-	       icccIt.Set( icc.rho_c );
-	       iccuIt.Set( icc.rho_u );
-
-	       if (maskIt.GetIndex() == maskIdx) {
-		    PrintMat( dataIt.Get() );
-	       }
+	       outMeasure = ComputeMeasure( dataIt.Get(), measureType );
+	       outIt.Set( outMeasure );
 	  }
      }
 
      WriterType3DFloat::Pointer writer = WriterType3DFloat::New();
-     writer->SetInput( icccPtr);
-     writer->SetFileName(icccfile);
+     writer->SetInput( outPtr);
+     writer->SetFileName(outfile);
 
      try 
      { 
@@ -118,22 +100,6 @@ int main(int argc, char* argv[])
 	  std::cerr << err << std::endl; 
 	  return EXIT_FAILURE;
      }      
-
-     writer->SetInput( iccuPtr);
-     writer->SetFileName(iccufile);
-
-     try 
-     { 
-	  writer->Update(); 
-     } 
-     catch( itk::ExceptionObject & err ) 
-     { 
-	  std::cerr << "ExceptionObject caught !" << std::endl; 
-	  std::cerr << err << std::endl; 
-	  return EXIT_FAILURE;
-     }      
-
-
      return 0;
 }
 
@@ -216,9 +182,9 @@ int LoadData(std::string datapath,
      return 0;
 }
 
-ICC ComputeICC(const std::vector< std::vector< double > > & mat)
+double ComputeMeasure(const std::vector< std::vector< double > > & mat, std::string measureType)
 {
-     ICC icc;
+     double result = 0;
      unsigned numSubs = mat.size();
      unsigned numSessions = mat[0].size();
      std::vector<double> subMean(numSubs, 0), sessionMean(numSessions, 0);
@@ -285,15 +251,50 @@ ICC ComputeICC(const std::vector< std::vector< double > > & mat)
      // compute sigma_p estimates.
      double MS_p = ssp / (numSubs - 1);
      double MS_t = sst / (numSessions - 1);
+     double MS_w = ssw / (numSubs * (numSessions-1) );
      double MS_e = sse / ( (numSubs-1)*(numSessions-1) );
 
-     icc.rho_u = (MS_p - MS_e) / ( MS_p + (numSessions-1)*MS_e + ((double)(numSessions) / (double)(numSubs))*(MS_t - MS_e) );
-     icc.rho_c = (MS_p - MS_e) / ( MS_p + (numSessions-1)*MS_e );
+     if (measureType.compare("icc_u") == 0) {
+	  if (MS_p == 0 && MS_t == 0 && MS_e == 0 ) {
+	       result = 0;
+	  }
+	  else {
+	       result = (MS_p - MS_e) / ( MS_p + (numSessions-1)*MS_e + ((double)(numSessions) / (double)(numSubs))*(MS_t - MS_e) );
+	  }
+     }
+     else if (measureType.compare("icc_c") == 0) {
+	  if (MS_p == 0 && MS_e == 0) {
+	       result = 0;
+	  }
+	  else {
+	       result = (MS_p - MS_e) / ( MS_p + (numSessions-1)*MS_e );
+	  }
+     }
+     else if (measureType.compare("icc1w") == 0) {
+	  if (MS_p == 0 && MS_w == 0) {
+	       result = 0;
+	  }
+	  else {
+	       result = (MS_p - MS_w) / ( MS_p + (numSessions-1) * MS_w );
+	  }
+     }
+     else if (measureType.compare("MS_p") == 0) {
+	  result = MS_p;
+     }
+     else if (measureType.compare("MS_w") == 0) {
+	  result = MS_w;
+     }
+     else if (measureType.compare("MS_t") == 0) {
+	  result = MS_t;
+     }
+     else if (measureType.compare("MS_e") == 0) {
+	  result = MS_e;
+     }
      
-     printf("Y_dd=%.1f, SS=%.1f, SS_p=%.1f, SS_w=%.1f, SS_t=%.1f, SS_e=%.1f, MS_p=%.1f, MS_t=%.1f, MS_e=%.1f, ICC_u=%.1f, ICC_c=%.1f\n", 
-     	    groundMean, ss, ssp, ssw, sst, sse, MS_p, MS_t, MS_e, icc.rho_u, icc.rho_c);
+     // printf("Y_dd=%.1f, SS=%.1f, SS_p=%.1f, SS_w=%.1f, SS_t=%.1f, SS_e=%.1f, MS_p=%.1f, MS_t=%.1f, MS_e=%.1f, ICC_u=%.1f, ICC_c=%.1f\n", 
+     // 	    groundMean, ss, ssp, ssw, sst, sse, MS_p, MS_t, MS_e, icc.rho_u, icc.rho_c);
      
-     return icc;
+     return result;
 }
 
 int PrintMat(std::vector< std::vector< double > >  mat)
