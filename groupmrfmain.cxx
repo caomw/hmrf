@@ -317,7 +317,7 @@ int main(int argc, char* argv[])
 	  if(estprior) {
 	       EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
 	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
-	       // PlotBeta(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par);
+	       PlotBeta(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par);
 	  }
 
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
@@ -962,16 +962,13 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
      unsigned runningLabel = 0;
      vnl_vector<double> eta(par.numClusters, 0);
      double eta_offset = 0;
-     unsigned pCount = 0;
+
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  curBit = rSampleMap[nodeIt];
 	  eta = 0;
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
 	       runningBit.reset(), runningBit[runningLabel] = 1;
 	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-		    // if (theGraph.id(nodeIt) == 1016079) {
-		    // 	 printf("l=%i, edgeid=%i, edgeMap[edgeIt]=%f, phi=%i, eta[%i]=%f\n", runningLabel, theGraph.id(edgeIt), edgeMap[edgeIt], runningBit != rSampleMap[theGraph.runningNode(edgeIt)], runningLabel, eta[runningLabel]);
-		    // }
 		    eta[runningLabel] = eta[runningLabel] - edgeMap[edgeIt] * (double)(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 		    //The temperature parameter that change the definition of
 		    //the posterior distribution.
@@ -987,13 +984,6 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 	  M0 = 0;	  
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {	  
 	       M0 += exp (eta[runningLabel] - eta_offset);
-	  }
-	  
-	  if(pCount < 10) {
-	       printf("eta:");
-	       printVnlVector(eta, par.numClusters);
-	       printf("pCount = %i, nodeId = %i, eta_offset = %f, eta_cur = %f, M0 = %f\n", pCount, theGraph.id(nodeIt), eta_offset, eta_cur, M0);
-	       pCount ++;
 	  }
 	  samplePriorEng += (eta_cur - eta_offset - log(M0));
      } // nodeIt
@@ -1069,7 +1059,7 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
      // save a*alpha+b*beta for all x = {1...L}
      vnl_vector<double> eta(par.numClusters, 0);
      double eta_offset = 0;
-     unsigned pCount = 0;
+
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  curBit = rSampleMap[nodeIt];
 	  eta = 0;
@@ -1079,10 +1069,6 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
 	       // and beta need to compute a and b separately.
 	       a = 0, b = 0;
 	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-
-		    // if (theGraph.id(nodeIt) == 1016079) {
-		    // 	 printf("l=%i, edgeid=%i, subid=[%i %i], phi=%i, a=%f, b=%f, eta[%i]=%f\n", runningLabel, theGraph.id(edgeIt), coordMap[theGraph.u(edgeIt)].subid, coordMap[theGraph.v(edgeIt)].subid, runningBit != rSampleMap[theGraph.runningNode(edgeIt)], a, b, runningLabel, eta[runningLabel]);
-		    // }
 		    if ( (coordMap[theGraph.u(edgeIt)].subid == par.numSubs && coordMap[theGraph.v(edgeIt)].subid == par.numSubs)
 			 || (coordMap[theGraph.u(edgeIt)].subid < par.numSubs && coordMap[theGraph.v(edgeIt)].subid < par.numSubs) ){
 			 // within group or within subject
@@ -1103,21 +1089,13 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
 			 a = a - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 
 		    }
-
-
-
 	       } // incEdgeIt
 
 	       a = a / par.temperature;
 	       b = b / par.temperature;
 
-
 	       // since the T -- temperature, 
 	       eta[runningLabel] = a*par.alpha + b*par.beta;
-
-	       // if (pCount < 10) {
-	       // 	    printf("        l = %i, a = %f, b = %f, a*par.alpha + b*par.beta = %f. eta[%i] = %f\n", runningLabel, a, b, a*par.alpha + b*par.beta, runningLabel, eta[runningLabel]);
-	       // }
 
 	       if (runningBit == curBit) {
 		    acur = a;
@@ -1129,20 +1107,12 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
 	  // is to prevent underflow. Tehre may be still underflow for some
 	  // smaller values, but we just ignore them.
 	  eta_offset = eta.max_value();
-
 	  M0 = 0, M1 = 0, M2 = 0;
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
 	       M0 += exp(eta[runningLabel] - eta_offset);
 	       M1 += b * exp(eta[runningLabel] - eta_offset);
 	       M2 += b * b * exp(eta[runningLabel] - eta_offset);
 	  } // runningLabel
-
-	  if(pCount < 10) {
-	       printf("pCount = %i, eta: ", pCount);
-	       printVnlVector(eta, par.numClusters);
-	       printf("  nodeId = %i, eta_offset = %f, acur * par.alpha + bcur * par.beta = %f, M0 = %f\n", theGraph.id(nodeIt), eta_offset, acur * par.alpha + bcur * par.beta, M0);
-	       pCount ++;
-	  }
 
 	  drv1 += (bcur - M1/M0);
 	  drv2 -= ( M2/M0 - pow(M1/M0, 2) );
