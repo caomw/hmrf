@@ -55,7 +55,6 @@ void *SamplingThreads(void * threadArgs);
 int CompBetaDrv(lemon::SmartGraph & theGraph, 
 		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 		lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
-		lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		ParStruct & par,
 		double & drv1, double & drv2);
 
@@ -227,7 +226,7 @@ int main(int argc, char* argv[])
 	  }
      }
 
-     PrintPar(4, par);
+     PrintPar(0, par);
 
      // define a subject initial label map used for initialization of subject
      // label map.
@@ -308,7 +307,7 @@ int main(int argc, char* argv[])
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
 	  if (par.verbose >= 2) {
 	       SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
-	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+
 	  }
 
 
@@ -317,6 +316,8 @@ int main(int argc, char* argv[])
 	  // estimate prior parameter, now beta.
 	  if(estprior) {
 	       EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
+	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+	       // PlotBeta(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par);
 	  }
 
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
@@ -740,7 +741,14 @@ int EstimateKappa(lemon::SmartGraph & theGraph,
 			 }
 		    }
 		    while(vnl_math_abs(kappa_new - kappa) > 0.01 * kappa && iter < 5);
-		    par.vmm.sub[subIdx].comp[clsIdx].kappa = kappa_new;
+
+		    // the temperature parameter change the definition of the
+		    // posterior distribution (and also the vmf likelihood
+		    // function. This is equivalnet to divide the kappa paramter
+		    // by T.  The kappa_new we estimate is actually kappa/T. So
+		    // we need kappa_new * T to recover the original kappa
+		    // paramter.
+		    par.vmm.sub[subIdx].comp[clsIdx].kappa = kappa_new * par.temperature;
 	       } // numPts > 0
 	       else {
 		    par.vmm.sub[subIdx].comp[clsIdx].kappa = 0;
@@ -950,24 +958,44 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 {
      double samplePriorEng = 0, sampleDataEng = 0;
      boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
-     double c = 0, ccur = 0, M0 = 0;
+     double eta_cur = 0, M0 = 0;
      unsigned runningLabel = 0;
+     vnl_vector<double> eta(par.numClusters, 0);
+     double eta_offset = 0;
+     unsigned pCount = 0;
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  curBit = rSampleMap[nodeIt];
-	  M0 = 0;
+	  eta = 0;
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
 	       runningBit.reset(), runningBit[runningLabel] = 1;
-	       c = 0;
 	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-		    c = c - edgeMap[edgeIt] * (double)(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+		    // if (theGraph.id(nodeIt) == 1016079) {
+		    // 	 printf("l=%i, edgeid=%i, edgeMap[edgeIt]=%f, phi=%i, eta[%i]=%f\n", runningLabel, theGraph.id(edgeIt), edgeMap[edgeIt], runningBit != rSampleMap[theGraph.runningNode(edgeIt)], runningLabel, eta[runningLabel]);
+		    // }
+		    eta[runningLabel] = eta[runningLabel] - edgeMap[edgeIt] * (double)(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+		    //The temperature parameter that change the definition of
+		    //the posterior distribution.
+		    eta[runningLabel] = eta[runningLabel] / par.temperature;
 	       } // incEdgeIt
-	       M0 += exp (c);
 
 	       if (runningBit == curBit) {
-		    ccur = c;
+		    eta_cur = eta[runningLabel];
 	       }
 	  } // runningBit.
-	  samplePriorEng += (ccur - log(M0));
+	  eta_offset = eta.max_value();
+
+	  M0 = 0;	  
+	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {	  
+	       M0 += exp (eta[runningLabel] - eta_offset);
+	  }
+	  
+	  if(pCount < 10) {
+	       printf("eta:");
+	       printVnlVector(eta, par.numClusters);
+	       printf("pCount = %i, nodeId = %i, eta_offset = %f, eta_cur = %f, M0 = %f\n", pCount, theGraph.id(nodeIt), eta_offset, eta_cur, M0);
+	       pCount ++;
+	  }
+	  samplePriorEng += (eta_cur - eta_offset - log(M0));
      } // nodeIt
 
      // convert log likelihood to energy.
@@ -982,7 +1010,12 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 	  vmfLogConst[subIdx].set_size(par.numClusters);
 	  for (clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 	       if (par.vmm.sub[subIdx].comp[clsIdx].kappa > 1) {
-		    vmfLogConst[subIdx][clsIdx] = (myD/2 - 1) * log (par.vmm.sub[subIdx].comp[clsIdx].kappa) - myD/2 * log(2*Pi) -  logBesselI(myD/2 - 1, par.vmm.sub[subIdx].comp[clsIdx].kappa);
+		    // since the data energy is also divided by T --
+		    // temperature, it's equlivalent to divide the kappa.
+		    vmfLogConst[subIdx][clsIdx] = 
+			 (myD/2 - 1) * log (par.vmm.sub[subIdx].comp[clsIdx].kappa / par.temperature)
+			 - myD/2 * log(2*Pi) 
+			 - logBesselI(myD/2 - 1, par.vmm.sub[subIdx].comp[clsIdx].kappa / par.temperature);
 	       }
 	       else {
 		    vmfLogConst[subIdx][clsIdx] = 25.5; // the limit when kappa -> 0
@@ -997,13 +1030,20 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 	       s = coordMap[nodeIt].subid;
 	       clsIdx = rSampleMap[nodeIt].find_first();
 	       sampleDataEng += vmfLogConst[s][clsIdx] + par.vmm.sub[s].comp[clsIdx].kappa * inner_product(tsMap[nodeIt], par.vmm.sub[s].comp[clsIdx].mu);
+
+
 	       // check if NaN.
 	       if (sampleDataEng != sampleDataEng) {
 		    printf("NAN happend at sub: %d, [%d %d %d]\n", s, (int)coordMap[nodeIt].idx[0], (int)coordMap[nodeIt].idx[1], (int)coordMap[nodeIt].idx[2]);
 		    exit(1);
 	       }
+
 	  } // subid < numSubs
      } // nodeIt
+
+     //The temperature parameter that change the definition of
+     //the posterior distribution.
+     sampleDataEng = sampleDataEng / par.temperature;
 
      // convert log likelihood to energy.
      sampleDataEng = - sampleDataEng;
@@ -1016,7 +1056,6 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 int CompBetaDrv(lemon::SmartGraph & theGraph, 
 		lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 		lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
-		lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		ParStruct & par,
 		double & drv1, double & drv2)
 {
@@ -1027,15 +1066,25 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
      std::array<double, 3> distWeight = {{BETAWEIGHT0, BETAWEIGHT1, BETAWEIGHT2}};
      unsigned runningLabel = 0, weightIdx = 0;
 
+     // save a*alpha+b*beta for all x = {1...L}
+     vnl_vector<double> eta(par.numClusters, 0);
+     double eta_offset = 0;
+     unsigned pCount = 0;
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  curBit = rSampleMap[nodeIt];
-	  M0 = 0, M1 = 0, M2 = 0;
+	  eta = 0;
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
 	       runningBit.reset(), runningBit[runningLabel] = 1;
+	       // here we can not use edgeMap since the derivative with alpha
+	       // and beta need to compute a and b separately.
 	       a = 0, b = 0;
 	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
-		    if ( (coordMap[theGraph.u(edgeIt)].subid == par.numClusters && coordMap[theGraph.v(edgeIt)].subid == par.numClusters)
-			 || (coordMap[theGraph.u(edgeIt)].subid < par.numClusters && coordMap[theGraph.v(edgeIt)].subid < par.numClusters) ){
+
+		    // if (theGraph.id(nodeIt) == 1016079) {
+		    // 	 printf("l=%i, edgeid=%i, subid=[%i %i], phi=%i, a=%f, b=%f, eta[%i]=%f\n", runningLabel, theGraph.id(edgeIt), coordMap[theGraph.u(edgeIt)].subid, coordMap[theGraph.v(edgeIt)].subid, runningBit != rSampleMap[theGraph.runningNode(edgeIt)], a, b, runningLabel, eta[runningLabel]);
+		    // }
+		    if ( (coordMap[theGraph.u(edgeIt)].subid == par.numSubs && coordMap[theGraph.v(edgeIt)].subid == par.numSubs)
+			 || (coordMap[theGraph.u(edgeIt)].subid < par.numSubs && coordMap[theGraph.v(edgeIt)].subid < par.numSubs) ){
 			 // within group or within subject
 			 if (par.weightbetadist){
 			      weightIdx = abs(coordMap[theGraph.u(edgeIt)].idx[0] - coordMap[theGraph.v(edgeIt)].idx[0]) 
@@ -1052,24 +1101,54 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
 		    else {
 			 // btw group and subjects.
 			 a = a - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+
 		    }
+
+
+
 	       } // incEdgeIt
 
-	       M0 += exp (a * par.alpha + b * par.beta );
+	       a = a / par.temperature;
+	       b = b / par.temperature;
 
-	       M1 += b * exp(a * par.alpha + b * par.beta);
-	       M2 += b * b * exp (a * par.alpha + b * par.beta);
+
+	       // since the T -- temperature, 
+	       eta[runningLabel] = a*par.alpha + b*par.beta;
+
+	       // if (pCount < 10) {
+	       // 	    printf("        l = %i, a = %f, b = %f, a*par.alpha + b*par.beta = %f. eta[%i] = %f\n", runningLabel, a, b, a*par.alpha + b*par.beta, runningLabel, eta[runningLabel]);
+	       // }
 
 	       if (runningBit == curBit) {
 		    acur = a;
 		    bcur = b;
 	       }
-
 	  } // runningLabel
 
+	  // substract the max value such that the new max would be zero. This
+	  // is to prevent underflow. Tehre may be still underflow for some
+	  // smaller values, but we just ignore them.
+	  eta_offset = eta.max_value();
+
+	  M0 = 0, M1 = 0, M2 = 0;
+	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
+	       M0 += exp(eta[runningLabel] - eta_offset);
+	       M1 += b * exp(eta[runningLabel] - eta_offset);
+	       M2 += b * b * exp(eta[runningLabel] - eta_offset);
+	  } // runningLabel
+
+	  if(pCount < 10) {
+	       printf("pCount = %i, eta: ", pCount);
+	       printVnlVector(eta, par.numClusters);
+	       printf("  nodeId = %i, eta_offset = %f, acur * par.alpha + bcur * par.beta = %f, M0 = %f\n", theGraph.id(nodeIt), eta_offset, acur * par.alpha + bcur * par.beta, M0);
+	       pCount ++;
+	  }
+
 	  drv1 += (bcur - M1/M0);
-	  drv2 -= (M2*M0 - M1*M1)/(M0*M0);
-	  priorEngy += (acur * par.alpha + bcur * par.beta - log (M0) );
+	  drv2 -= ( M2/M0 - pow(M1/M0, 2) );
+
+	  // need compensate the min of exponential a*alpha+b*beta.
+	  priorEngy += (acur * par.alpha + bcur * par.beta - eta_offset - log (M0) );
      } // nodeIt
 	  
      // convert log likelihood to energy.
@@ -1091,12 +1170,12 @@ int EstimateBeta(lemon::SmartGraph & theGraph,
      do {
 	  numIter ++;
 	  beta_o = par.beta;
-	  priorEngy = CompBetaDrv(theGraph, coordMap, rSampleMap, edgeMap, par, drv1, drv2);
+	  priorEngy = CompBetaDrv(theGraph, coordMap, rSampleMap, par, drv1, drv2);
 	  par.beta = par.beta - (drv1/drv2);
-	  if (par.verbose >= 2) {
+	  if (par.verbose >= 0) {
 	       printf("drv1 = %E, drv2 = %E, beta_o = %1.3f, par.beta = %1.3f, priorEngy = %E\n", drv1, drv2, beta_o, par.beta, priorEngy);
 	  }
-     } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 3);
+     } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 0);
      return 0;
 }
 
@@ -1110,7 +1189,7 @@ int PlotBeta(lemon::SmartGraph & theGraph,
 {
  
      double beta_old = par.beta;
-     for (par.beta = 0.01; par.beta < 0.5; par.beta = par.beta + 0.05) {
+     for (par.beta = 0.01; par.beta < 1; par.beta = par.beta + 0.05) {
 	  BuildEdgeMap(theGraph, edgeMap, coordMap, tsMap, par);
 	  printf("beta = %2.2f, ", par.beta);
 	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 

@@ -206,7 +206,7 @@ int PrintPar(unsigned prlevel, ParStruct & par)
 	  printf("\n");
 	  
 	  for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	       printf("%s%-9d", "sub", subIdx+1);
+	       printf("%-10s", par.vmm.sub[subIdx].name.c_str());
 	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 
 		    printf("[%3.2f %3.2f] ", par.vmm.sub[subIdx].comp[clsIdx].mu[0], par.vmm.sub[subIdx].comp[clsIdx].mu[1]);
@@ -224,7 +224,7 @@ int PrintPar(unsigned prlevel, ParStruct & par)
 
 	  
 	  for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	       printf("%s%-8d", "sub", subIdx+1);
+	       printf("%-10s", par.vmm.sub[subIdx].name.c_str());
 	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 
 		    printf("%12.4f", par.vmm.sub[subIdx].comp[clsIdx].kappa);
@@ -241,7 +241,7 @@ int PrintPar(unsigned prlevel, ParStruct & par)
 	  printf("\n");
 
 	  for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	       printf("%s%-8d", "sub", subIdx+1);
+	       printf("%-10s", par.vmm.sub[subIdx].name.c_str());
 	       for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 		    printf("%12ld", par.vmm.sub[subIdx].comp[clsIdx].numPts);
 	       }
@@ -251,17 +251,10 @@ int PrintPar(unsigned prlevel, ParStruct & par)
 	  
      }
 
-     if (prlevel >=2) {
+     if (prlevel >=0) {
 	  printf("numClusters: %d,   numSamples: %d,   numSubs: %d,   burnin: %d,   \ninitTemp: %4.3f,   finalTemp: %4.3f, temperature: %4.3f, tsLength: %d\n", par.numClusters, par.numSamples, par.numSubs, par.burnin, par.initTemp, par.finalTemp, par.temperature, par.tsLength);
 	  printf("alpha: %4.3f,   beta: %4.3f,   gamma:%4.3f,   alpha0: %4.3f,   sigma2: %4.3f,   nthreads: %d,   sweepPerThread: %d\n", par.alpha, par.beta, par.gamma, par.alpha0, par.sigma2, par.nthreads, par.sweepPerThread);
      }
-     if (prlevel >=4 ) {
-	  printf("subject names:\n");
-	  for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
-	       printf("%s%02d: %s\n", "sub", subIdx+1, par.vmm.sub[subIdx].name.c_str());
-	  }	  
-     }
-
 
      return 0;
 }
@@ -305,6 +298,20 @@ int save3dcharInc(ImageType3DChar::Pointer ip, std::string fname)
 
 
 int printVnlVector(vnl_vector<float> vec, unsigned numElements)
+{
+     unsigned short eleIdx = 0;
+     unsigned vecSize = vec.size();
+     unsigned numPrint = vnl_math_min(vecSize, numElements);
+     printf("[ ");
+     for (eleIdx = 0; eleIdx < numPrint; eleIdx ++) {
+	  // cout << vec[eleIdx] << " ";
+	  printf("%.4f ", vec[eleIdx]);
+     }
+     printf("]\n");
+     return (0);
+}
+
+int printVnlVector(vnl_vector<double> vec, unsigned numElements)
 {
      unsigned short eleIdx = 0;
      unsigned vecSize = vec.size();
