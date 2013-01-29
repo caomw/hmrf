@@ -225,6 +225,12 @@ struct ThreadArgs{
      unsigned endNodeid;
 };
 
+struct Prior012Drv{
+     double val;
+     double drv1;
+     double drv2;
+};
+
 // the beta smoothness parameter can be weighted by the spatial distance between
 // two voxels.
 #define BETAWEIGHT0 1

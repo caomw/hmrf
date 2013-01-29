@@ -78,6 +78,12 @@ int PlotBeta(lemon::SmartGraph & theGraph,
 	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 	     ParStruct & par);
 
+Prior012Drv CompPrior012Drv(lemon::SmartGraph & theGraph, 
+			    lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+			    lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+			    ParStruct & par);
+
+
 using namespace lemon;
 int main(int argc, char* argv[])
 {
@@ -310,14 +316,12 @@ int main(int argc, char* argv[])
 
 	  }
 
-
      	  // estimate vMF parameters mu, kappa.
      	  printf("EM iteration %i, parameter estimation begin. \n", emIterIdx + 1);
 	  // estimate prior parameter, now beta.
 	  if(estprior) {
-	       CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
-	       EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
 	       // PlotBeta(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par);
+	       EstimateBeta(theGraph, coordMap, rSampleMap, edgeMap, par);
 	  }
 
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
@@ -962,8 +966,7 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
      unsigned runningLabel = 0;
      vnl_vector<double> eta(par.numClusters, 0);
      double eta_offset = 0;
-     unsigned pCount = 0;
-     double priorEngOld = 0;
+
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  curBit = rSampleMap[nodeIt];
 	  eta = 0;
@@ -984,28 +987,13 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 	  eta_offset = eta.max_value();
 
 	  M0 = 0;	  
-	  double M0_old = 0;
 
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {	  
 	       M0 += exp (eta[runningLabel] - eta_offset);
-	       M0_old += exp(eta[runningLabel]);
-
 	  }
 
 	  samplePriorEng += (eta_cur - eta_offset - log(M0));
-
-	  // if(pCount < 30 && exp(eta_offset)*M0 != M0_old) {
-	  if (pCount < 30 && theGraph.id(nodeIt)%1 == 0) {
-	       // printf("node = %i, M0 (offset)=%E, M0_old=%E\n", theGraph.id(nodeIt), exp(eta_offset)*M0, M0_old);
-	       printf("node = %i, M0 = %E, eta_cur = %f, eta_offset = %f, priorEngy = %E\n", theGraph.id(nodeIt), M0, eta_cur, eta_offset, samplePriorEng);
-	       printVnlVector(eta, par.numClusters);
-	       pCount ++;
-	  }
-
-	  priorEngOld += (eta_cur - log(M0_old) );
      } // nodeIt
-
-     printf("samplePriorEng: %E. priorEngOld: %E\n", samplePriorEng, priorEngOld);
 
      // convert log likelihood to energy.
      samplePriorEng = - samplePriorEng;
@@ -1068,26 +1056,24 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
 		ParStruct & par,
 		double & drv1, double & drv2)
 {
-     double a = 0, b = 0, M0 = 0, M1 = 0, M2 = 0, acur = 0, bcur = 0;
+     double M0 = 0, M1 = 0, M2 = 0, acur = 0, bcur = 0;
      drv1 = 0, drv2 = 0;
      double priorEngy = 0;
      boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
      std::array<double, 3> distWeight = {{BETAWEIGHT0, BETAWEIGHT1, BETAWEIGHT2}};
      unsigned runningLabel = 0, weightIdx = 0;
 
-     // save a*alpha+b*beta for all x = {1...L}
-     vnl_vector<double> eta(par.numClusters, 0);
+     vnl_vector<double> a(par.numClusters, 0), b(par.numClusters, 0);
      double eta_offset = 0;
 
-     unsigned pCount = 0;
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  curBit = rSampleMap[nodeIt];
-	  eta = 0;
+	  a = 0, b = 0;
+	  eta_offset = -1E8;
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
 	       runningBit.reset(), runningBit[runningLabel] = 1;
 	       // here we can not use edgeMap since the derivative with alpha
 	       // and beta need to compute a and b separately.
-	       a = 0, b = 0;
 	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
 		    if ( (coordMap[theGraph.u(edgeIt)].subid == par.numSubs && coordMap[theGraph.v(edgeIt)].subid == par.numSubs)
 			 || (coordMap[theGraph.u(edgeIt)].subid < par.numSubs && coordMap[theGraph.v(edgeIt)].subid < par.numSubs) ){
@@ -1098,55 +1084,43 @@ int CompBetaDrv(lemon::SmartGraph & theGraph,
 				   + abs(coordMap[theGraph.u(edgeIt)].idx[2] - coordMap[theGraph.v(edgeIt)].idx[2])
 				   -1;
 
-			      b = b - distWeight[weightIdx] * double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+			      b[runningLabel] = b[runningLabel] - distWeight[weightIdx] * double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 			 }
 			 else {
-			      b = b - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+			      b[runningLabel] = b[runningLabel] - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 			 } // weightbetadist
 		    } // within grp or sub.
 		    else {
 			 // btw group and subjects.
-			 a = a - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+			 a[runningLabel] = a[runningLabel] - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 
 		    }
 	       } // incEdgeIt
 
-	       a = a / par.temperature;
-	       b = b / par.temperature;
-
-	       // since the T -- temperature, 
-	       eta[runningLabel] = a*par.alpha + b*par.beta;
+	       a[runningLabel] = a[runningLabel] / par.temperature;
+	       b[runningLabel] = b[runningLabel] / par.temperature;
 
 	       if (runningBit == curBit) {
-		    acur = a;
-		    bcur = b;
+		    acur = a[runningLabel];
+		    bcur = b[runningLabel];
+	       }
+
+	       if (eta_offset < a[runningLabel]*par.alpha + b[runningLabel]*par.beta) {
+		    eta_offset = a[runningLabel]*par.alpha + b[runningLabel]*par.beta;
 	       }
 	  } // runningLabel
 
-	  // substract the max value such that the new max would be zero. This
-	  // is to prevent underflow. Tehre may be still underflow for some
-	  // smaller values, but we just ignore them.
-	  eta_offset = eta.max_value();
 	  M0 = 0, M1 = 0, M2 = 0;
 	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
-	       M0 += exp(eta[runningLabel] - eta_offset);
-	       M1 += b * exp(eta[runningLabel] - eta_offset);
-	       M2 += b * b * exp(eta[runningLabel] - eta_offset);
+	       M0 += exp(a[runningLabel]*par.alpha + b[runningLabel]*par.beta - eta_offset);
+	       M1 += b[runningLabel] * exp(a[runningLabel]*par.alpha + b[runningLabel]*par.beta - eta_offset);
+	       M2 += b[runningLabel] * b[runningLabel] * exp(a[runningLabel]*par.alpha + b[runningLabel]*par.beta - eta_offset);
 	  } // runningLabel
-
-	  drv1 += (bcur - M1/M0);
-	  drv2 -= ( M2/M0 - pow(M1/M0, 2) );
-
 
 	  // need compensate the min of exponential a*alpha+b*beta.
 	  priorEngy += (acur * par.alpha + bcur * par.beta - eta_offset - log (M0) );
-
-	  if (pCount < 30 && theGraph.id(nodeIt)%1 == 0) {
-	       printf("node: %i, M0 = %E, a = %f, b = %f, eta_cur = %f, eta_offset = %f, priorEngy = %E\n",  theGraph.id(nodeIt), M0, a, b, acur * par.alpha + bcur * par.beta, eta_offset, priorEngy );
-	       printVnlVector(eta, par.numClusters);
-	       pCount ++;
-	  }
-
+	  drv1 += (bcur - M1/M0);
+	  drv2 -= ( M2/M0 - pow(M1/M0, 2) );
      } // nodeIt
 	  
      // convert log likelihood to energy.
@@ -1162,18 +1136,19 @@ int EstimateBeta(lemon::SmartGraph & theGraph,
 		lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		ParStruct & par)
 {
-     double beta_o = 0, priorEngy = 0;;
+     double beta_o = 0;
      unsigned numIter = 0;
-     double drv1 = 0, drv2 = 0;
+     Prior012Drv prior012drv;
      do {
 	  numIter ++;
 	  beta_o = par.beta;
-	  priorEngy = CompBetaDrv(theGraph, coordMap, rSampleMap, par, drv1, drv2);
-	  par.beta = par.beta - (drv1/drv2);
+	  prior012drv = CompPrior012Drv(theGraph, coordMap, rSampleMap, par);
+	  // priorEngy = CompBetaDrv(theGraph, coordMap, rSampleMap, par, drv1, drv2);
+	  par.beta = par.beta - (prior012drv.drv1 / prior012drv.drv2);
 	  if (par.verbose >= 0) {
-	       printf("drv1 = %E, drv2 = %E, beta_o = %1.3f, par.beta = %1.3f, priorEngy = %E\n", drv1, drv2, beta_o, par.beta, priorEngy);
+	       printf("drv1 = %E, drv2 = %E, beta_o = %1.3f, par.beta = %1.3f, priorEngy = %E\n", prior012drv.drv1, prior012drv.drv2, beta_o, par.beta, prior012drv.val);
 	  }
-     } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 0);
+     } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 1);
      return 0;
 }
 
@@ -1187,11 +1162,106 @@ int PlotBeta(lemon::SmartGraph & theGraph,
 {
  
      double beta_old = par.beta;
-     for (par.beta = 0.01; par.beta < 1; par.beta = par.beta + 0.05) {
-	  BuildEdgeMap(theGraph, edgeMap, coordMap, tsMap, par);
-	  printf("beta = %2.2f, ", par.beta);
-	  CompSampleEnergy(theGraph, coordMap, rSampleMap, edgeMap, tsMap, par); 
+     Prior012Drv prior012drv;
+     for (par.beta = 0.0; par.beta < 0.5; par.beta = par.beta + 0.05) {
+	  prior012drv = CompPrior012Drv(theGraph, coordMap, rSampleMap, par);
+
      }
      par.beta = beta_old;
      return 0;
+}
+
+
+
+Prior012Drv CompPrior012Drv(lemon::SmartGraph & theGraph, 
+			    lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
+			    lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
+			    ParStruct & par)
+
+{
+     double M0 = 0, M1 = 0, M2 = 0, acur = 0, bcur = 0;
+     Prior012Drv prior012drv;
+     prior012drv.val = 0;
+     prior012drv.drv1 = 0;
+     prior012drv.drv2 = 0;
+
+     boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
+     std::array<double, 3> distWeight = {{BETAWEIGHT0, BETAWEIGHT1, BETAWEIGHT2}};
+     unsigned runningLabel = 0, weightIdx = 0;
+
+     vnl_vector<double> a(par.numClusters, 0), b(par.numClusters, 0);
+     double eta_offset = 0;
+
+     for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
+	  curBit = rSampleMap[nodeIt];
+	  a = 0, b = 0;
+	  eta_offset = -1E8;
+	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
+	       runningBit.reset(), runningBit[runningLabel] = 1;
+	       // here we can not use edgeMap since the derivative with alpha
+	       // and beta need to compute a and b separately.
+	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
+		    if ( (coordMap[theGraph.u(edgeIt)].subid == par.numSubs && coordMap[theGraph.v(edgeIt)].subid == par.numSubs)
+			 || (coordMap[theGraph.u(edgeIt)].subid < par.numSubs && coordMap[theGraph.v(edgeIt)].subid < par.numSubs) ){
+			 // within group or within subject
+			 if (par.weightbetadist){
+			      weightIdx = abs(coordMap[theGraph.u(edgeIt)].idx[0] - coordMap[theGraph.v(edgeIt)].idx[0]) 
+				   + abs(coordMap[theGraph.u(edgeIt)].idx[1] - coordMap[theGraph.v(edgeIt)].idx[1]) 
+				   + abs(coordMap[theGraph.u(edgeIt)].idx[2] - coordMap[theGraph.v(edgeIt)].idx[2])
+				   -1;
+
+			      b[runningLabel] = b[runningLabel] - distWeight[weightIdx] * double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+			 }
+			 else {
+			      b[runningLabel] = b[runningLabel] - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+			 } // weightbetadist
+		    } // within grp or sub.
+		    else {
+			 // btw group and subjects.
+			 a[runningLabel] = a[runningLabel] - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
+
+		    }
+	       } // incEdgeIt
+
+	       a[runningLabel] = a[runningLabel] / par.temperature;
+	       b[runningLabel] = b[runningLabel] / par.temperature;
+
+	       if (runningBit == curBit) {
+		    acur = a[runningLabel];
+		    bcur = b[runningLabel];
+	       }
+
+	       if (eta_offset < a[runningLabel]*par.alpha + b[runningLabel]*par.beta) {
+		    eta_offset = a[runningLabel]*par.alpha + b[runningLabel]*par.beta;
+	       }
+	  } // runningLabel
+
+	  M0 = 0, M1 = 0, M2 = 0;
+	  for (runningLabel = 0; runningLabel < par.numClusters; runningLabel ++) {
+	       M0 += exp(a[runningLabel]*par.alpha + b[runningLabel]*par.beta - eta_offset);
+	       M1 += b[runningLabel] * exp(a[runningLabel]*par.alpha + b[runningLabel]*par.beta - eta_offset);
+	       M2 += b[runningLabel] * b[runningLabel] * exp(a[runningLabel]*par.alpha + b[runningLabel]*par.beta - eta_offset);
+	  } // runningLabel
+
+	  // need compensate the min of exponential a*alpha+b*beta.
+	  prior012drv.val += (acur * par.alpha + bcur * par.beta - eta_offset - log (M0) );
+	  prior012drv.drv1 += (bcur - M1/M0);
+	  prior012drv.drv2 -= ( M2/M0 - pow(M1/M0, 2) );
+
+	  // if (theGraph.id(nodeIt) > theGraph.maxNodeId()+1 - 10) {
+	  //      printf("   node: %i, priorEng = %E, drv1 = %E, drv2 = %E\n", theGraph.id(nodeIt), prior012drv.val, prior012drv.drv1, prior012drv.drv2);
+	       // printf("       eta: ");
+	       // printVnlVector(eta, par.numClusters);
+	       // printf("       M0 = %E, M1 = %E, M2 = %E, M1/M0 = %E, acur = %f, bcur = %f\n", M0, M1, M2, M1/M0, acur, bcur);
+	  // }
+
+     } // nodeIt
+	  
+     // convert log likelihood to energy.
+     prior012drv.drv1 = - prior012drv.drv1;
+     prior012drv.drv2 = - prior012drv.drv2;
+     prior012drv.val = - prior012drv.val;
+
+     printf("beta = %f, priorEng = %E, drv1 = %E, drv2 = %E\n", par.beta, prior012drv.val, prior012drv.drv1, prior012drv.drv2);
+     return prior012drv;
 }
