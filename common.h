@@ -11,7 +11,7 @@
 #include <iostream>
 #include <iterator>
 #include <string>
-#include <array>
+// #include <array>
 #include <fstream>
 #include <iomanip>
 #include <algorithm>
@@ -216,7 +216,7 @@ struct ThreadArgs{
      lemon::SmartGraph::NodeMap<SuperCoordType> * coordMapPtr;
      lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > * rSampleMapPtr;
      lemon::SmartGraph::EdgeMap<double> *  edgeMapPtr;
-     lemon::SmartGraph::NodeMap<vnl_vector<float>> * tsMapPtr;
+     lemon::SmartGraph::NodeMap<vnl_vector<float> > * tsMapPtr;
      std::vector< vnl_vector<double> > * vmfLogConstPtr;
      ParStruct * parPtr;
      unsigned numThreads;
@@ -225,7 +225,7 @@ struct ThreadArgs{
      unsigned endNodeid;
 };
 
-struct Prior012Drv{
+struct PriorDrv{
      double val;
      double drv1;
      double drv2;

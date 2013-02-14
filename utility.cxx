@@ -252,8 +252,8 @@ int PrintPar(unsigned prlevel, ParStruct & par)
      }
 
      if (prlevel >=0) {
-	  printf("numClusters: %d,   numSamples: %d,   numSubs: %d,   burnin: %d,   \ninitTemp: %4.3f,   finalTemp: %4.3f, temperature: %4.3f, tsLength: %d\n", par.numClusters, par.numSamples, par.numSubs, par.burnin, par.initTemp, par.finalTemp, par.temperature, par.tsLength);
-	  printf("alpha: %4.3f,   beta: %4.3f,   gamma:%4.3f,   alpha0: %4.3f,   sigma2: %4.3f,   nthreads: %d,   sweepPerThread: %d\n", par.alpha, par.beta, par.gamma, par.alpha0, par.sigma2, par.nthreads, par.sweepPerThread);
+	  printf("numClusters: %d,   \nnumSamples: %d,   \nnumSubs: %d,   \nburnin: %d,   \ninitTemp: %4.3f,   \nfinalTemp: %4.3f, \ntemperature: %4.3f, \ntsLength: %d\n", par.numClusters, par.numSamples, par.numSubs, par.burnin, par.initTemp, par.finalTemp, par.temperature, par.tsLength);
+	  printf("alpha: %4.3f,   \nbeta: %4.3f,   \ngamma:%4.3f,   \nalpha0: %4.3f,   \nsigma2: %4.3f,   \nnthreads: %d,   \nsweepPerThread: %d\n", par.alpha, par.beta, par.gamma, par.alpha0, par.sigma2, par.nthreads, par.sweepPerThread);
      }
 
      return 0;

@@ -71,7 +71,7 @@ int PlotBeta(lemon::SmartGraph & theGraph,
 	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 	     ParStruct & par);
 
-Prior012Drv CompPrior012Drv(lemon::SmartGraph & theGraph, 
+PriorDrv CompPriorDrv(lemon::SmartGraph & theGraph, 
 			    lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 			    lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
 			    ParStruct & par);
@@ -142,7 +142,7 @@ int main(int argc, char* argv[])
 	   ("initgrouplabel,i", po::value<std::string>(&initGrplabel)->default_value("grouplabel.nii"), 
 	    "Initial group level label map (Intensity value 1-K. Also used as mask file.")
 	   ("initsubpath,t", po::value<std::string>(&initsubpath)->default_value("./subpath"), 
-	    "Initial subject label maps path")
+	    "Initial subject label maps path. The files in this path must has the same file names as the fMRI files.")
 	  ("fmripath,f", po::value<std::string>(&fmriPath)->default_value("."), 
 	   "noised image file")
 
@@ -193,7 +193,7 @@ int main(int argc, char* argv[])
      par.rsampledir = rsampledir;
      par.numSubs = ComputeNumSubs(fmriPath);
      printf("number of subjects: %i.\n", par.numSubs);
-     par.temperature = 1;
+     par.temperature = par.initTemp;
 
      // init parameters so BuildDataMap knows what to do.
      par.vmm.sub.resize(par.numSubs);
@@ -203,7 +203,7 @@ int main(int argc, char* argv[])
      lemon::SmartGraph::NodeMap<SuperCoordType> coordMap(theGraph); // node --> coordinates.
      BuildGraph(theGraph, coordMap, par.numSubs, maskPtr);
 
-     // Build Data map.
+     // Build Data map (also get subject name)
      lemon::SmartGraph::NodeMap<vnl_vector<float>> tsMap(theGraph); // node --> time series.
      BuildDataMap(theGraph, coordMap, tsMap, fmriPath, par);
 
@@ -303,10 +303,13 @@ int main(int argc, char* argv[])
      for (unsigned short emIterIdx = 0; emIterIdx < emIter; emIterIdx ++) {     
      	  printf("EM iteration %i begin:\n", emIterIdx + 1);
 	  par.temperature = par.initTemp * pow( (par.finalTemp / par.initTemp), float(emIterIdx) / float(emIter) );
+
 	  Sampling(theGraph, coordMap, cumuSampleMap, rSampleMap, edgeMap, tsMap, par);
+
+	  printf("after Sampling: \n");
+	  CompSampleEnergy(theGraph, coordMap, rSampleMap, tsMap, par); 
 	  if (par.verbose >= 2) {
 	       SaveCumuSamples(theGraph, coordMap, cumuSampleMap, par);
-
 	  }
 
      	  // estimate vMF parameters mu, kappa.
@@ -320,6 +323,7 @@ int main(int argc, char* argv[])
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
 	  EstimateKappa(theGraph, par);
 	  PrintPar(2, par);
+	  printf("After parameter estimation: \n");
 	  CompSampleEnergy(theGraph, coordMap, rSampleMap, tsMap, par); 
      } // emIterIdx
 
@@ -370,10 +374,8 @@ int BuildGraph(lemon::SmartGraph & theGraph,
      nodeMapPtr->SetRegions(nodeMapRegion);
      nodeMapPtr->Allocate();
      nodeMapPtr->FillBuffer(0);
-
      
      // Add nodes.
-
      lemon::SmartGraph::Node curNode, neiNode;
 
      // fill in subjects nodes.
@@ -639,15 +641,18 @@ int InitSubSamples(std::string srcpath,
      sort(sortedEntries.begin(), sortedEntries.end() );
      if (sortedEntries.size() != par.numSubs) {
 	  std::cout << "number of files in " << srcpath << "is not equal to number of files in fmri path.\n";
-	  exit(1);
      }
 
      // init file reader pointers.
+     std::string initFile;
      std::vector<ReaderType3DChar::Pointer> readerVec(par.numSubs);
      std::vector<ImageType3DChar::Pointer> srcPtrVec(par.numSubs);
      for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
 	  readerVec[subIdx] = ReaderType3DChar::New();
-	  readerVec[subIdx]->SetFileName( sortedEntries[subIdx].string() );
+	  initFile = srcpath + "/" + par.vmm.sub[subIdx].name + ".nii.gz";
+	  std::cout << "InitSubSamples(): reading file " << initFile << std::endl;
+	  // readerVec[subIdx]->SetFileName( sortedEntries[subIdx].string() );
+	  readerVec[subIdx]->SetFileName( initFile );
 	  readerVec[subIdx]->Update();
 	  srcPtrVec[subIdx]= readerVec[subIdx]->GetOutput();
      }
@@ -697,11 +702,8 @@ int EstimateMu(lemon::SmartGraph & theGraph,
      for (unsigned subIdx = 0; subIdx < par.numSubs; subIdx ++) {
 	  for (unsigned clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {     
 	       if(par.vmm.sub[subIdx].comp[clsIdx].numPts > 0) {
-		    // printf("numPts: %d. ", par.vmm.sub[subIdx].comp[clsIdx].numPts);
-		    // printVnlVector(par.vmm.sub[subIdx].comp[clsIdx].mu, 5);
 		    par.vmm.sub[subIdx].comp[clsIdx].meanNorm = par.vmm.sub[subIdx].comp[clsIdx].mu.two_norm() / par.vmm.sub[subIdx].comp[clsIdx].numPts;
 		    par.vmm.sub[subIdx].comp[clsIdx].mu.normalize();
-		    // printVnlVector(par.vmm.sub[subIdx].comp[clsIdx].mu, 5);
 	       }
 	       else {
 		    par.vmm.sub[subIdx].comp[clsIdx].meanNorm = 0;
@@ -739,13 +741,11 @@ int EstimateKappa(lemon::SmartGraph & theGraph,
 		    }
 		    while(vnl_math_abs(kappa_new - kappa) > 0.01 * kappa && iter < 5);
 
-		    // the temperature parameter change the definition of the
-		    // posterior distribution (and also the vmf likelihood
-		    // function. This is equivalnet to divide the kappa paramter
-		    // by T.  The kappa_new we estimate is actually kappa/T. So
-		    // we need kappa_new * T to recover the original kappa
-		    // paramter.
-		    par.vmm.sub[subIdx].comp[clsIdx].kappa = kappa_new * par.temperature;
+		    // here we do not divide the kappa by the temperature, since
+		    // the time series data remains same not matter what
+		    // temperature we choose. The different T just change the
+		    // set of samples to be used in the kappa estimation.
+		    par.vmm.sub[subIdx].comp[clsIdx].kappa = kappa_new;
 	       } // numPts > 0
 	       else {
 		    par.vmm.sub[subIdx].comp[clsIdx].kappa = 0;
@@ -952,10 +952,10 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 		     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
 		     ParStruct & par)
 {
-     Prior012Drv prior012drv;
+     PriorDrv prior012drv;
      double sampleDataEng = 0;
 
-     prior012drv = CompPrior012Drv(theGraph, coordMap, rSampleMap, par);
+     prior012drv = CompPriorDrv(theGraph, coordMap, rSampleMap, par);
 
      // for data energy.
      std::vector< vnl_vector<double> >vmfLogConst(par.numSubs);
@@ -966,12 +966,10 @@ int CompSampleEnergy(lemon::SmartGraph & theGraph,
 	  vmfLogConst[subIdx].set_size(par.numClusters);
 	  for (clsIdx = 0; clsIdx < par.numClusters; clsIdx ++) {
 	       if (par.vmm.sub[subIdx].comp[clsIdx].kappa > 1) {
-		    // since the data energy is also divided by T --
-		    // temperature, it's equlivalent to divide the kappa.
 		    vmfLogConst[subIdx][clsIdx] = 
-			 (myD/2 - 1) * log (par.vmm.sub[subIdx].comp[clsIdx].kappa / par.temperature)
+			 (myD/2 - 1) * log (par.vmm.sub[subIdx].comp[clsIdx].kappa)
 			 - myD/2 * log(2*Pi) 
-			 - logBesselI(myD/2 - 1, par.vmm.sub[subIdx].comp[clsIdx].kappa / par.temperature);
+			 - logBesselI(myD/2 - 1, par.vmm.sub[subIdx].comp[clsIdx].kappa);
 	       }
 	       else {
 		    vmfLogConst[subIdx][clsIdx] = 25.5; // the limit when kappa -> 0
@@ -1017,16 +1015,16 @@ int EstimateBeta(lemon::SmartGraph & theGraph,
 {
      double beta_o = 0;
      unsigned numIter = 0;
-     Prior012Drv prior012drv;
+     PriorDrv prior012drv;
      do {
 	  numIter ++;
 	  beta_o = par.beta;
-	  prior012drv = CompPrior012Drv(theGraph, coordMap, rSampleMap, par);
+	  prior012drv = CompPriorDrv(theGraph, coordMap, rSampleMap, par);
 	  par.beta = par.beta - (prior012drv.drv1 / prior012drv.drv2);
 	  if (par.verbose >= 0) {
 	       printf("drv1 = %E, drv2 = %E, beta_o = %1.3f, par.beta = %1.3f, priorEngy = %E\n", prior012drv.drv1, prior012drv.drv2, beta_o, par.beta, prior012drv.val);
 	  }
-     } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 2);
+     } while (fabs(beta_o - par.beta) > 1e-5 && numIter <= 3);
      return 0;
 }
 
@@ -1040,22 +1038,22 @@ int PlotBeta(lemon::SmartGraph & theGraph,
 {
  
      double beta_old = par.beta;
-     Prior012Drv prior012drv;
+     PriorDrv prior012drv;
      for (par.beta = 0.0; par.beta < 0.5; par.beta = par.beta + 0.05) {
-	  prior012drv = CompPrior012Drv(theGraph, coordMap, rSampleMap, par);
+	  prior012drv = CompPriorDrv(theGraph, coordMap, rSampleMap, par);
 	  printf("beta = %f, priorEng = %E, drv1 = %E, drv2 = %E\n", par.beta, prior012drv.val, prior012drv.drv1, prior012drv.drv2);
      }
      par.beta = beta_old;
      return 0;
 }
 
-Prior012Drv CompPrior012Drv(lemon::SmartGraph & theGraph, 
+PriorDrv CompPriorDrv(lemon::SmartGraph & theGraph, 
 			    lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 			    lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
 			    ParStruct & par)
 {
      double M0 = 0, M1 = 0, M2 = 0, acur = 0, bcur = 0;
-     Prior012Drv prior012drv;
+     PriorDrv prior012drv;
      prior012drv.val = 0;
      prior012drv.drv1 = 0;
      prior012drv.drv2 = 0;
