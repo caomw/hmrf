@@ -19,7 +19,7 @@ int BuildDataMap(lemon::SmartGraph & theGraph,
 int BuildEdgeMap(lemon::SmartGraph & theGraph, 
 		 lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		 lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		 lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+		 lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 		 ParStruct & par);
 
 int InitSubSamples(std::string srcpath,
@@ -31,7 +31,7 @@ int InitSubSamples(std::string srcpath,
 int EstimateMu(lemon::SmartGraph & theGraph, 
 	       lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 	       lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-	       lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+	       lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 	       ParStruct & par);
 
 int EstimateKappa(lemon::SmartGraph & theGraph, 
@@ -47,7 +47,7 @@ int Sampling(lemon::SmartGraph & theGraph,
 	     lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
 	     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
 	     lemon::SmartGraph::EdgeMap<double> & edgeMap,
-	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+	     lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 	     ParStruct & par);
 
 void *SamplingThreads(void * threadArgs);
@@ -61,14 +61,14 @@ int EstimateBeta(lemon::SmartGraph & theGraph,
 int CompSampleEnergy(lemon::SmartGraph & theGraph, 
 		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 		     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
-		     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+		     lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 		     ParStruct & par);
 
 int PlotBeta(lemon::SmartGraph & theGraph, 
 	     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 	     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
 	     lemon::SmartGraph::EdgeMap<double> & edgeMap,
-	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+	     lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 	     ParStruct & par);
 
 PriorDrv CompPriorDrv(lemon::SmartGraph & theGraph, 
@@ -204,7 +204,7 @@ int main(int argc, char* argv[])
      BuildGraph(theGraph, coordMap, par.numSubs, maskPtr);
 
      // Build Data map (also get subject name)
-     lemon::SmartGraph::NodeMap<vnl_vector<float>> tsMap(theGraph); // node --> time series.
+     lemon::SmartGraph::NodeMap<vnl_vector<float> > tsMap(theGraph); // node --> time series.
      BuildDataMap(theGraph, coordMap, tsMap, fmriPath, par);
 
      // Define edge map.
@@ -423,14 +423,17 @@ int BuildGraph(lemon::SmartGraph & theGraph,
      
      // xplus, xminus, yplus, yminus, zplus, zminus
      // std::array<unsigned int, 6 > neiIdxSet = {{14, 12, 16, 10, 22, 4}}; 
-     std::array<unsigned int, 26> neiIdxSet = {{ 0,1,2,3,4,5,6,7,8,9,10,11,12,//no 13
-						 14,15,16,17,18,19,20,21,22,23,24,25,26 }};
+     unsigned int nei_set_array[] = {4, 10, 12, 14, 16, 22, // 6 neighborhood
+				     1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25, // 18 neighborhood
+				     0, 2, 6, 8, 18, 20, 24, 26}; // 26 neighborhood
+     std::set<unsigned int> neiIdxSet(nei_set_array, nei_set_array + 26);
+     // std::array<unsigned int, 26> neiIdxSet = {{ 0,1,2,3,4,5,6,7,8,9,10,11,12,//no 13
+     // 						 14,15,16,17,18,19,20,21,22,23,24,25,26 }};
      // std::array<unsigned int, 18 > neiIdxSet = {{1,3,4,5,7,9,10,11,12,
      // 						14,15,16,17,19,21,22,23,25}};
      ImageType3DChar::IndexType maskIdx;
      int curNodeId = 0, neiNodeId = 0;
-     // std::array<short, 6>::const_iterator neiIdxIt;
-     auto neiIdxIt = neiIdxSet.begin();
+     std::set<unsigned>::iterator neiIdxIt = neiIdxSet.begin();
 
      // edge within grp.
      for (maskNeiIt.GoToBegin(); !maskNeiIt.IsAtEnd(); ++ maskNeiIt) {
@@ -444,7 +447,7 @@ int BuildGraph(lemon::SmartGraph & theGraph,
 	       // curNode is group node.
 	       curNode = theGraph.nodeFromId( curNodeId );
 
-	       for (neiIdxIt=neiIdxSet.begin(); neiIdxIt < neiIdxSet.end(); neiIdxIt++) {
+	       for (neiIdxIt=neiIdxSet.begin(); neiIdxIt != neiIdxSet.end(); ++neiIdxIt) {
 		    if (maskNeiIt.GetPixel(*neiIdxIt) > 0) {
 			 neiIdx = maskNeiIt.GetIndex(*neiIdxIt);
 			 nodeMapIdx[0] = neiIdx[0];
@@ -502,7 +505,7 @@ int BuildGraph(lemon::SmartGraph & theGraph,
 		    // curNode is in subject map.
 		    curNode = theGraph.nodeFromId( curNodeId );
 
-		    for (neiIdxIt=neiIdxSet.begin(); neiIdxIt < neiIdxSet.end(); neiIdxIt++) {
+		    for (neiIdxIt=neiIdxSet.begin(); neiIdxIt != neiIdxSet.end(); neiIdxIt++) {
 			 if (maskNeiIt.GetPixel(*neiIdxIt) > 0) {
 			      neiIdx = maskNeiIt.GetIndex(*neiIdxIt);
 			      nodeMapIdx[0] = neiIdx[0];
@@ -529,24 +532,16 @@ int BuildGraph(lemon::SmartGraph & theGraph,
 int BuildEdgeMap(lemon::SmartGraph & theGraph, 
 		 lemon::SmartGraph::EdgeMap<double> & edgeMap,
 		 lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
-		 lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+		 lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 		 ParStruct & par)
 {
      unsigned weightIdx = 0;
-     std::array<double, 3> distWeight = {{BETAWEIGHT0, BETAWEIGHT1, BETAWEIGHT2}};
      for (SmartGraph::EdgeIt edgeIt(theGraph); edgeIt != INVALID; ++ edgeIt) {
 	  if (coordMap[theGraph.u(edgeIt)].subid < par.numSubs && 
 	      coordMap[theGraph.v(edgeIt)].subid < par.numSubs) {
 	       // within subjects.
 	       if (par.weightbetadata) {
 		    edgeMap[edgeIt] = 0.5 * par.beta * pow(inner_product(tsMap[theGraph.u(edgeIt)], tsMap[theGraph.v(edgeIt)]) + 1, 2);
-	       }
-	       else if (par.weightbetadist){
-		    weightIdx = abs(coordMap[theGraph.u(edgeIt)].idx[0] - coordMap[theGraph.v(edgeIt)].idx[0]) 
-			 + abs(coordMap[theGraph.u(edgeIt)].idx[1] - coordMap[theGraph.v(edgeIt)].idx[1]) 
-			 + abs(coordMap[theGraph.u(edgeIt)].idx[2] - coordMap[theGraph.v(edgeIt)].idx[2])
-			 -1;
-		    edgeMap[edgeIt] = distWeight[weightIdx] * par.beta;
 	       }
 	       else {
 	       edgeMap[edgeIt] = par.beta;
@@ -676,7 +671,7 @@ int InitSubSamples(std::string srcpath,
 int EstimateMu(lemon::SmartGraph & theGraph, 
 	       lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 	       lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
-	       lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+	       lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 	       ParStruct & par)
 {
      // reset all mu and numPts to zero.
@@ -772,7 +767,7 @@ int Sampling(lemon::SmartGraph & theGraph,
 	     lemon::SmartGraph::NodeMap<std::vector<unsigned short> > & cumuSampleMap,
 	     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
 	     lemon::SmartGraph::EdgeMap<double> & edgeMap,
-	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+	     lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 	     ParStruct & par)
 {
      unsigned taskid = 0;
@@ -873,7 +868,7 @@ void *SamplingThreads(void * threadArgs)
      lemon::SmartGraph::NodeMap<SuperCoordType> * coordMapPtr = args->coordMapPtr;
      lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > * rSampleMapPtr = args->rSampleMapPtr;
      lemon::SmartGraph::EdgeMap<double> * edgeMapPtr = args->edgeMapPtr;
-     lemon::SmartGraph::NodeMap<vnl_vector<float>> * tsMapPtr = args->tsMapPtr;
+     lemon::SmartGraph::NodeMap<vnl_vector<float> > * tsMapPtr = args->tsMapPtr;
      std::vector< vnl_vector<double> > * vmfLogConstPtr = args->vmfLogConstPtr;
      ParStruct * parPtr = args->parPtr;
 
@@ -949,7 +944,7 @@ void *SamplingThreads(void * threadArgs)
 int CompSampleEnergy(lemon::SmartGraph & theGraph, 
 		     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 		     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
-		     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+		     lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 		     ParStruct & par)
 {
      PriorDrv prior012drv;
@@ -1033,7 +1028,7 @@ int PlotBeta(lemon::SmartGraph & theGraph,
 	     lemon::SmartGraph::NodeMap<SuperCoordType> & coordMap,
 	     lemon::SmartGraph::NodeMap< boost::dynamic_bitset<> > & rSampleMap,
 	     lemon::SmartGraph::EdgeMap<double> & edgeMap,
-	     lemon::SmartGraph::NodeMap<vnl_vector<float>> & tsMap,
+	     lemon::SmartGraph::NodeMap<vnl_vector<float> > & tsMap,
 	     ParStruct & par)
 {
  
@@ -1059,7 +1054,6 @@ PriorDrv CompPriorDrv(lemon::SmartGraph & theGraph,
      prior012drv.drv2 = 0;
 
      boost::dynamic_bitset<> curBit(par.numClusters), runningBit(par.numClusters);
-     std::array<double, 3> distWeight = {{BETAWEIGHT0, BETAWEIGHT1, BETAWEIGHT2}};
      unsigned runningLabel = 0, weightIdx = 0;
 
      vnl_vector<double> a(par.numClusters, 0), b(par.numClusters, 0);
@@ -1076,18 +1070,7 @@ PriorDrv CompPriorDrv(lemon::SmartGraph & theGraph,
 	       for (SmartGraph::IncEdgeIt edgeIt(theGraph, nodeIt); edgeIt != INVALID; ++ edgeIt) {
 		    if ( (coordMap[theGraph.u(edgeIt)].subid == par.numSubs && coordMap[theGraph.v(edgeIt)].subid == par.numSubs)
 			 || (coordMap[theGraph.u(edgeIt)].subid < par.numSubs && coordMap[theGraph.v(edgeIt)].subid < par.numSubs) ){
-			 // within group or within subject
-			 if (par.weightbetadist){
-			      weightIdx = abs(coordMap[theGraph.u(edgeIt)].idx[0] - coordMap[theGraph.v(edgeIt)].idx[0]) 
-				   + abs(coordMap[theGraph.u(edgeIt)].idx[1] - coordMap[theGraph.v(edgeIt)].idx[1]) 
-				   + abs(coordMap[theGraph.u(edgeIt)].idx[2] - coordMap[theGraph.v(edgeIt)].idx[2])
-				   -1;
-
-			      b[runningLabel] = b[runningLabel] - distWeight[weightIdx] * double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
-			 }
-			 else {
-			      b[runningLabel] = b[runningLabel] - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
-			 } // weightbetadist
+			 b[runningLabel] = b[runningLabel] - double(runningBit != rSampleMap[theGraph.runningNode(edgeIt)]) ;
 		    } // within grp or sub.
 		    else {
 			 // btw group and subjects.

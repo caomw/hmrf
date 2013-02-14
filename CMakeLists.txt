@@ -4,8 +4,6 @@ PROJECT(hiermrf)
 #if you don't want the full compiler output, remove the following line
 SET(CMAKE_VERBOSE_MAKEFILE OFF)
 
-# ADD_DEFINITIONS(-std=gnu++0x)
-
 FIND_PACKAGE(ITK REQUIRED)
 IF(ITK_FOUND)
   INCLUDE(${ITK_USE_FILE})
@@ -68,22 +66,22 @@ ADD_EXECUTABLE(get012
   )
 
 
-TARGET_LINK_LIBRARIES(groupmrf emon ${ITK_LIBRARIES} boost_program_options boost_filesystem)
-TARGET_LINK_LIBRARIES(label2ind ${ITK_LIBRARIES} boost_program_options boost_filesystem)
-TARGET_LINK_LIBRARIES(ind2label ${ITK_LIBRARIES} boost_program_options boost_filesystem)
-TARGET_LINK_LIBRARIES(sample2label ${ITK_LIBRARIES} boost_program_options boost_filesystem)
-TARGET_LINK_LIBRARIES(copyheader ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(groupmrf emon ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
+TARGET_LINK_LIBRARIES(label2ind ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
+TARGET_LINK_LIBRARIES(ind2label ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
+TARGET_LINK_LIBRARIES(sample2label ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
+TARGET_LINK_LIBRARIES(copyheader ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
 
-TARGET_LINK_LIBRARIES(applymask ${ITK_LIBRARIES} boost_program_options boost_filesystem)
-TARGET_LINK_LIBRARIES(seedcorr ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(applymask ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
+TARGET_LINK_LIBRARIES(seedcorr ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
 
-TARGET_LINK_LIBRARIES(compareclusterings ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(compareclusterings ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
 
-TARGET_LINK_LIBRARIES(alignlabelmaps ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(alignlabelmaps ${ITK_LIBRARIES} boost_program_options boost_filesystem boost_system)
 
-TARGET_LINK_LIBRARIES(geticc ${ITK_LIBRARIES} boost_program_options boost_filesystem)
-TARGET_LINK_LIBRARIES(geticcs ${ITK_LIBRARIES} boost_program_options boost_filesystem)
-TARGET_LINK_LIBRARIES(get012 ${ITK_LIBRARIES} boost_program_options boost_filesystem)
+TARGET_LINK_LIBRARIES(geticc ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
+TARGET_LINK_LIBRARIES(geticcs ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
+TARGET_LINK_LIBRARIES(get012 ${ITK_LIBRARIES} boost_program_options boost_filesystem  boost_system)
 
 
 
