@@ -12,7 +12,7 @@ int main(int argc, char* argv[])
      // command line
      po::options_description mydesc("Options can only used at commandline");
      mydesc.add_options()
-	  ("help,h", "Compute intraclass correlation coefficient by assuming a one-way ANOVA model.")
+	  ("help,h", " Compute a 0-1-2 map. take value 1 if all 3 labels are equal, takes 1 if two are euqal, and take 2 if all diferent.")
 	  ("verbose,v", po::value<unsigned short>(&verbose)->default_value(0), 
 	   "verbose level. 0 for minimal output. 3 for most output.")
 	  ("s1", po::value<std::string>(&s1file)->default_value("s1file.nii.gz"), 
@@ -91,13 +91,13 @@ int main(int argc, char* argv[])
      for (s1It.GoToBegin(), s2It.GoToBegin(), s3It.GoToBegin(), conIt.GoToBegin(), maskIt.GoToBegin(); !maskIt.IsAtEnd(); ++ s1It, ++s2It, ++s3It, ++conIt, ++maskIt) {
 	  if (maskIt.Get() > 0) {
 	       if ( (s1It.Get() == s2It.Get()) && (s1It.Get() == s3It.Get()) ) {
-		    conIt.Set(3);
+		    conIt.Set(0);
 	       }
 	       else if ((s1It.Get()==s2It.Get()) || (s1It.Get() == s3It.Get()) || (s2It.Get() == s3It.Get()) ) {
-		    conIt.Set(2);
+		    conIt.Set(1);
 	       }
 	       else {
-		    conIt.Set(1);
+		    conIt.Set(2);
 	       }
 	  }
      }
@@ -116,5 +116,7 @@ int main(int argc, char* argv[])
 	  std::cerr << err << std::endl; 
 	  return EXIT_FAILURE;
      }      
+
+     printf("get012(): file %s saved.\n", outfile.c_str() );
      return 0;
 }

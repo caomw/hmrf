@@ -325,3 +325,30 @@ int printVnlVector(vnl_vector<double> vec, unsigned numElements)
      return (0);
 }
 
+int save3dchar(ImageType3DChar::Pointer ip, std::string fname)
+{
+     // use this filter to cast char to short int for saving file. Original data
+     // should not be changed.
+     typedef itk::CastImageFilter< ImageType3DChar, ImageType3DShort > CastFilterType;
+     CastFilterType::Pointer castFilter = CastFilterType::New();
+     castFilter->SetInput(ip);
+
+     WriterType3DShort::Pointer writer = WriterType3DShort::New();
+     writer->SetInput(castFilter->GetOutput() );
+     writer->SetFileName(fname);
+
+     try 
+     { 
+     	  writer->Update(); 
+     } 
+     catch( itk::ExceptionObject & err ) 
+     { 
+     	  std::cerr << "ExceptionObject caught !" << std::endl; 
+     	  std::cerr << err << std::endl; 
+     	  return EXIT_FAILURE;
+     } 
+
+     std::cout << "save3dchar(): File " << fname << " saved.\n";
+
+     return 0;
+}

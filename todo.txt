@@ -1,0 +1,8 @@
+-- split into differnt files: sampling, estimation, ...
+-- use Gibbs sampling instead of Metropolis, can save time.
+-- also fix the runningbit == curbit error in beta estimation func. But anway the stacked samples data structure can not estimate prior parameter (alpha, beta), nor it can estimate log likelihood, since neighborhood information is unknow now. :(
+-- (done) weight the beta based on spatial distance of the voxels. May need get the voxel coordinates.
+-- (done) rewrite Rand index function, according to the probalistic Rand index paper.
+-- if we estimate beta, edgeMap will be udpated to reflect the new beta value. 
+-- add temperature at beta estimation. double check beta's value when estimating beta in case it goes crazy. Make sure estimation begin from small value of beta.
+-- (done) rewite routine for label calibration so the labels are aligned. 

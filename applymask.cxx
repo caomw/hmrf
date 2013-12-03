@@ -48,11 +48,14 @@ int main(int argc, char* argv[])
      IteratorType3DShort inIt(inPtr, inPtr->GetLargestPossibleRegion());
      ImageType3DShort::PointType pixelPoint;
      ImageType3DShort::IndexType inIdx, maskIdx;
+     
+
      for (inIt.GoToBegin(); !inIt.IsAtEnd(); ++ inIt) {
 	  if (inIt.Get() > 0) {
 	       inIdx = inIt.GetIndex();
 	       inPtr->TransformIndexToPhysicalPoint(inIdx, pixelPoint);
 	       maskPtr->TransformPhysicalPointToIndex(pixelPoint, maskIdx);
+	       printf("inIdx: %i %i %i, pixelPoint: %f %f %f, maskIdx: %i %i %i\n", inIdx[0], inIdx[1], inIdx[2], pixelPoint[0], pixelPoint[1], pixelPoint[2], maskIdx[0], maskIdx[1], maskIdx[2]);
 	       
 	       if (maskPtr->GetPixel(maskIdx) <= 0) {
 		    inIt.Set( 0 );
@@ -60,6 +63,11 @@ int main(int argc, char* argv[])
 	  }    
 
      }
+
+     // test for transformation.
+     pixelPoint[0] = 0, pixelPoint[1] = 0, pixelPoint[2] = 0;
+     maskPtr->TransformPhysicalPointToIndex(pixelPoint, maskIdx);
+     printf("pixelPoint: %f %f %f, maskIdx: %i %i %i\n", pixelPoint[0], pixelPoint[1], pixelPoint[2], maskIdx[0], maskIdx[1], maskIdx[2]);
 
      WriterType3DShort::Pointer writer = WriterType3DShort::New();
      writer->SetInput( inPtr );

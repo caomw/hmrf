@@ -160,7 +160,7 @@ int main(int argc, char* argv[])
 
      try {
 	  if ( (vm.count("help")) | (argc == 1) ) {
-	       std::cout << "Usage: gropumrf [options]\n";
+	       std::cout << "Usage: groupmrf [options]\n";
 	       std::cout << mydesc << "\n";
 	       return 0;
 	  }
@@ -224,8 +224,7 @@ int main(int argc, char* argv[])
 	       par.vmm.sub[subIdx].comp[clsIdx].prop = 0;
 	  }
      }
-
-     PrintPar(0, par);
+     if (par.verbose >= 1)      PrintPar(0, par);
 
      // define a subject initial label map used for initialization of subject
      // label map.
@@ -322,7 +321,7 @@ int main(int argc, char* argv[])
 
 	  EstimateMu(theGraph, coordMap, cumuSampleMap, tsMap, par);
 	  EstimateKappa(theGraph, par);
-	  PrintPar(2, par);
+	  PrintPar(0, par);
 	  printf("After parameter estimation: \n");
 	  CompSampleEnergy(theGraph, coordMap, rSampleMap, tsMap, par); 
      } // emIterIdx
@@ -427,10 +426,6 @@ int BuildGraph(lemon::SmartGraph & theGraph,
 				     1, 3, 5, 7, 9, 11, 15, 17, 19, 21, 23, 25, // 18 neighborhood
 				     0, 2, 6, 8, 18, 20, 24, 26}; // 26 neighborhood
      std::set<unsigned int> neiIdxSet(nei_set_array, nei_set_array + 26);
-     // std::array<unsigned int, 26> neiIdxSet = {{ 0,1,2,3,4,5,6,7,8,9,10,11,12,//no 13
-     // 						 14,15,16,17,18,19,20,21,22,23,24,25,26 }};
-     // std::array<unsigned int, 18 > neiIdxSet = {{1,3,4,5,7,9,10,11,12,
-     // 						14,15,16,17,19,21,22,23,25}};
      ImageType3DChar::IndexType maskIdx;
      int curNodeId = 0, neiNodeId = 0;
      std::set<unsigned>::iterator neiIdxIt = neiIdxSet.begin();
@@ -775,11 +770,9 @@ int Sampling(lemon::SmartGraph & theGraph,
      ThreadArgs threadArgs[par.nthreads];
 
      // reset cumuSampleMap to zero.
-     printf("reset cumuSampleMap begin...");
      for (SmartGraph::NodeIt nodeIt(theGraph); nodeIt !=INVALID; ++ nodeIt) {
 	  cumuSampleMap[nodeIt].assign(par.numClusters, 0);
      }
-     printf("done.\n");
 
      // Compute the number of nodes that each thread computes.
      unsigned totalNumNodes = theGraph.maxNodeId()+1;     
